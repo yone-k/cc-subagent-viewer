@@ -242,9 +242,10 @@ func truncateString(s string, maxLen int) string {
 
 // agentToolInput represents the parsed input of an Agent tool_use block.
 type agentToolInput struct {
-	Description  string `json:"description"`
-	Prompt       string `json:"prompt"`
-	SubagentType string `json:"subagent_type"`
+	Description     string `json:"description"`
+	Prompt          string `json:"prompt"`
+	SubagentType    string `json:"subagent_type"`
+	RunInBackground bool   `json:"run_in_background"`
 }
 
 // AgentDescription holds description and subagent type extracted from parent conversation.
@@ -256,10 +257,21 @@ type AgentDescription struct {
 	Status       SubagentStatus
 }
 
+// isAsyncLaunchResult checks if a tool_result content indicates an async agent
+// launch confirmation rather than actual completion. This serves as a fallback
+// when the run_in_background flag is not available.
+func isAsyncLaunchResult(content json.RawMessage) bool {
+	if len(content) == 0 {
+		return false
+	}
+	return strings.Contains(string(content), "Async agent launched")
+}
+
 // ExtractAgentDescriptions parses a parent conversation JSONL file and extracts
 // Agent tool_use descriptions. Returns a slice of AgentDescription in the order they appear,
 // with Status set to SubagentRunning or SubagentClosed based on whether a corresponding
-// tool_result entry exists.
+// tool_result entry exists. Background agents (run_in_background=true) are always
+// treated as running since their immediate tool_result is just a launch confirmation.
 func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 	f, err := os.Open(parentPath)
 	if err != nil {
@@ -269,6 +281,7 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 
 	var result []AgentDescription
 	completedIDs := make(map[string]bool)
+	backgroundIDs := make(map[string]bool) // tool_use IDs launched with run_in_background
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
@@ -310,6 +323,9 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 				if input.Prompt == "" || input.Description == "" {
 					continue
 				}
+				if input.RunInBackground {
+					backgroundIDs[rb.ID] = true
+				}
 				result = append(result, AgentDescription{
 					Prompt:       input.Prompt,
 					Description:  input.Description,
@@ -320,9 +336,19 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 		case "user":
 			// Track completed tool_result entries
 			for _, rb := range rawBlocks {
-				if rb.Type == "tool_result" && rb.ToolUseID != "" {
-					completedIDs[rb.ToolUseID] = true
+				if rb.Type != "tool_result" || rb.ToolUseID == "" {
+					continue
 				}
+				// Skip background agents: their immediate tool_result is
+				// just a launch confirmation, not a completion signal.
+				if backgroundIDs[rb.ToolUseID] {
+					continue
+				}
+				// Fallback: also check tool_result content for async launch pattern
+				if isAsyncLaunchResult(rb.Content) {
+					continue
+				}
+				completedIDs[rb.ToolUseID] = true
 			}
 		}
 	}

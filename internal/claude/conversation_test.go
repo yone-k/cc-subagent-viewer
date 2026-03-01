@@ -3,6 +3,7 @@ package claude
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -118,8 +119,8 @@ func TestExtractAgentDescriptions(t *testing.T) {
 		t.Fatalf("ExtractAgentDescriptions() error = %v", err)
 	}
 
-	if len(descriptions) != 3 {
-		t.Fatalf("got %d descriptions, want 3", len(descriptions))
+	if len(descriptions) != 4 {
+		t.Fatalf("got %d descriptions, want 4", len(descriptions))
 	}
 
 	// First Agent tool_use: closed (has tool_result)
@@ -162,6 +163,48 @@ func TestExtractAgentDescriptions(t *testing.T) {
 	}
 	if descriptions[2].Status != SubagentRunning {
 		t.Errorf("descriptions[2].Status = %q, want %q", descriptions[2].Status, SubagentRunning)
+	}
+
+	// Fourth Agent tool_use: background agent (has tool_result but run_in_background=true)
+	// Should be running because tool_result is just a launch confirmation
+	if descriptions[3].Description != "Background code review" {
+		t.Errorf("descriptions[3].Description = %q, want %q", descriptions[3].Description, "Background code review")
+	}
+	if descriptions[3].SubagentType != "ai-antipattern-fixer" {
+		t.Errorf("descriptions[3].SubagentType = %q, want %q", descriptions[3].SubagentType, "ai-antipattern-fixer")
+	}
+	if descriptions[3].ToolUseID != "toolu_bg_test" {
+		t.Errorf("descriptions[3].ToolUseID = %q, want %q", descriptions[3].ToolUseID, "toolu_bg_test")
+	}
+	if descriptions[3].Status != SubagentRunning {
+		t.Errorf("descriptions[3].Status = %q, want %q (background agent should remain running)", descriptions[3].Status, SubagentRunning)
+	}
+}
+
+func TestExtractAgentDescriptions_AsyncLaunchFallback(t *testing.T) {
+	// Test that even without run_in_background flag, async launch content
+	// in tool_result prevents marking the agent as closed.
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "conversation.jsonl")
+
+	lines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_no_flag","name":"Agent","input":{"description":"Some task","prompt":"Do something","subagent_type":"general-task-executor"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_no_flag","content":"Async agent launched successfully.\nagentId: xyz789"}]}}`,
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	descriptions, err := ExtractAgentDescriptions(path)
+	if err != nil {
+		t.Fatalf("ExtractAgentDescriptions() error = %v", err)
+	}
+	if len(descriptions) != 1 {
+		t.Fatalf("got %d descriptions, want 1", len(descriptions))
+	}
+	if descriptions[0].Status != SubagentRunning {
+		t.Errorf("Status = %q, want %q (async launch result should be treated as running)", descriptions[0].Status, SubagentRunning)
 	}
 }
 
