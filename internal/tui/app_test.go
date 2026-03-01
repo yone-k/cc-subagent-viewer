@@ -273,3 +273,70 @@ func TestAppModel_ConversationUpdatedMsg(t *testing.T) {
 		t.Errorf("conversation entries = %d, want 1", len(mPtr.agentView.conversations["agent1"]))
 	}
 }
+
+func TestAppModel_ShiftArrowDelegatedToLogView(t *testing.T) {
+	m := NewAppModel(nil)
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+	// Switch to log tab (Active=2)
+	m.tabs.SetActive(2)
+
+	// Initial filterCursor should be 0
+	if m.logView.filterCursor != 0 {
+		t.Fatalf("initial logView.filterCursor = %d, want 0", m.logView.filterCursor)
+	}
+
+	// Shift+Right should be delegated to LogView, moving filterCursor
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	mPtr := newModel.(*AppModel)
+	if mPtr.logView.filterCursor != 1 {
+		t.Errorf("logView.filterCursor = %d, want 1 after shift+right", mPtr.logView.filterCursor)
+	}
+
+	// Tab should not change
+	if mPtr.tabs.Active != 2 {
+		t.Errorf("Active tab = %d, want 2 (should stay on log tab)", mPtr.tabs.Active)
+	}
+
+	// Shift+Left should move cursor back
+	newModel, _ = mPtr.Update(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	mPtr = newModel.(*AppModel)
+	if mPtr.logView.filterCursor != 0 {
+		t.Errorf("logView.filterCursor = %d, want 0 after shift+left", mPtr.logView.filterCursor)
+	}
+}
+
+func TestAppModel_ShiftArrowDelegatedToConversationView(t *testing.T) {
+	m := NewAppModel(nil)
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+	// Switch to agents tab (Active=1)
+	m.tabs.SetActive(1)
+
+	// Set AgentView to conversation mode by simulating agent selection
+	m.agentView.mode = AgentViewModeConversation
+	m.agentView.conversationView = NewConversationViewModel()
+	m.agentView.conversationView.SetSize(80, 20)
+	m.agentView.conversationView.SetData("test-agent", []claude.ConversationEntry{
+		{Type: claude.EntryTypeUser, Content: []claude.ContentBlock{{Type: "text", Text: "Hello"}}},
+	}, nil)
+
+	// Initial filterCursor should be 0
+	if m.agentView.conversationView.filterCursor != 0 {
+		t.Fatalf("initial conversationView.filterCursor = %d, want 0", m.agentView.conversationView.filterCursor)
+	}
+
+	// Shift+Right should be delegated to ConversationView
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	mPtr := newModel.(*AppModel)
+	if mPtr.agentView.conversationView.filterCursor != 1 {
+		t.Errorf("conversationView.filterCursor = %d, want 1 after shift+right", mPtr.agentView.conversationView.filterCursor)
+	}
+
+	// Tab should not change
+	if mPtr.tabs.Active != 1 {
+		t.Errorf("Active tab = %d, want 1 (should stay on agents tab)", mPtr.tabs.Active)
+	}
+}

@@ -14,6 +14,21 @@ import (
 
 const maxLogEntries = 10000
 
+type logFilterDef struct {
+	label string
+	level claude.LogLevel
+}
+
+var logFilterDefs = []logFilterDef{
+	{"Debug", claude.LevelDEBUG},
+	{"Error", claude.LevelERROR},
+	{"Warn", claude.LevelWARN},
+	{"MCP", claude.LevelMCP},
+	{"Startup", claude.LevelSTARTUP},
+	{"Meta", claude.LevelMETA},
+	{"Attach", claude.LevelATTACHMENT},
+}
+
 // LogViewModel manages the Logs tab view.
 type LogViewModel struct {
 	entries       []claude.LogEntry
@@ -21,7 +36,7 @@ type LogViewModel struct {
 	searchQuery   string
 	searchInput   textinput.Model
 	searching     bool
-	autoScroll    bool
+	filterCursor  int
 	scrollOffset  int
 	width         int
 	height        int
@@ -37,7 +52,7 @@ func NewLogViewModel() LogViewModel {
 
 	return LogViewModel{
 		filterLevels: map[claude.LogLevel]bool{
-			claude.LevelDEBUG:      true,
+			claude.LevelDEBUG:      false,
 			claude.LevelERROR:      true,
 			claude.LevelWARN:       true,
 			claude.LevelMCP:        true,
@@ -46,7 +61,6 @@ func NewLogViewModel() LogViewModel {
 			claude.LevelATTACHMENT: true,
 		},
 		searchInput:   ti,
-		autoScroll:    true,
 		filteredDirty: true,
 	}
 }
@@ -71,6 +85,7 @@ func (m LogViewModel) Init() tea.Cmd {
 func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case watcher.LogEntriesMsg:
+		wasAtBottom := m.isAtBottom()
 		if msg.Initial {
 			m.entries = msg.Entries
 		} else {
@@ -81,9 +96,8 @@ func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = m.entries[len(m.entries)-maxLogEntries:]
 		}
 		m.filteredDirty = true
-		if m.autoScroll {
-			filtered := m.filteredEntries()
-			m.scrollOffset = len(filtered)
+		if wasAtBottom {
+			m.scrollToBottom()
 		}
 		return m, nil
 
@@ -114,50 +128,17 @@ func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
-		case key.Matches(msg, LogKeys.FilterDEBUG):
-			m.filterLevels[claude.LevelDEBUG] = !m.filterLevels[claude.LevelDEBUG]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
+		case key.Matches(msg, LogKeys.FilterLeft):
+			if m.filterCursor > 0 {
+				m.filterCursor--
 			}
-		case key.Matches(msg, LogKeys.FilterERROR):
-			m.filterLevels[claude.LevelERROR] = !m.filterLevels[claude.LevelERROR]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
+		case key.Matches(msg, LogKeys.FilterRight):
+			if m.filterCursor < len(logFilterDefs)-1 {
+				m.filterCursor++
 			}
-		case key.Matches(msg, LogKeys.FilterWARN):
-			m.filterLevels[claude.LevelWARN] = !m.filterLevels[claude.LevelWARN]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
-			}
-		case key.Matches(msg, LogKeys.FilterMCP):
-			m.filterLevels[claude.LevelMCP] = !m.filterLevels[claude.LevelMCP]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
-			}
-		case key.Matches(msg, LogKeys.FilterSTARTUP):
-			m.filterLevels[claude.LevelSTARTUP] = !m.filterLevels[claude.LevelSTARTUP]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
-			}
-		case key.Matches(msg, LogKeys.FilterMETA):
-			m.filterLevels[claude.LevelMETA] = !m.filterLevels[claude.LevelMETA]
-			m.filteredDirty = true
-			filtered := m.filteredEntries()
-			if m.scrollOffset > len(filtered) {
-				m.scrollOffset = len(filtered)
-			}
-		case key.Matches(msg, LogKeys.FilterATTACHMENT):
-			m.filterLevels[claude.LevelATTACHMENT] = !m.filterLevels[claude.LevelATTACHMENT]
+		case key.Matches(msg, LogKeys.FilterToggle):
+			level := logFilterDefs[m.filterCursor].level
+			m.filterLevels[level] = !m.filterLevels[level]
 			m.filteredDirty = true
 			filtered := m.filteredEntries()
 			if m.scrollOffset > len(filtered) {
@@ -167,14 +148,11 @@ func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searching = true
 			m.searchInput.Focus()
 			return m, m.searchInput.Cursor.BlinkCmd()
-		case key.Matches(msg, LogKeys.AutoScroll):
-			m.autoScroll = !m.autoScroll
 		default:
 			switch msg.String() {
 			case "up", "k":
 				if m.scrollOffset > 0 {
 					m.scrollOffset--
-					m.autoScroll = false
 				}
 			case "down", "j":
 				m.scrollOffset++
@@ -186,6 +164,23 @@ func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m LogViewModel) isAtBottom() bool {
+	filtered := m.filteredEntries()
+	viewHeight := m.height - 4
+	if viewHeight < 1 {
+		viewHeight = 10
+	}
+	if len(filtered) <= viewHeight {
+		return true
+	}
+	return m.scrollOffset >= len(filtered)
+}
+
+func (m *LogViewModel) scrollToBottom() {
+	filtered := m.filteredEntries()
+	m.scrollOffset = len(filtered)
 }
 
 func (m *LogViewModel) filteredEntries() []claude.LogEntry {
@@ -229,9 +224,7 @@ func (m LogViewModel) View() string {
 	// Calculate visible range
 	start := 0
 	if len(filtered) > viewHeight {
-		if m.autoScroll {
-			start = len(filtered) - viewHeight
-		} else if m.scrollOffset > viewHeight {
+		if m.scrollOffset > viewHeight {
 			start = m.scrollOffset - viewHeight
 		}
 	}
@@ -244,39 +237,22 @@ func (m LogViewModel) View() string {
 		entry := filtered[i]
 		levelStyle := logLevelStyle(entry.Level)
 		ts := entry.Timestamp.Format("15:04:05.000")
-		levelStr := levelStyle.Render(fmt.Sprintf("[%-10s]", entry.Level))
+		levelStr := levelStyle.Render(fmt.Sprintf("[%s]", entry.Level))
 		b.WriteString(fmt.Sprintf("%s %s %s\n", DimStyle.Render(ts), levelStr, entry.Message))
 	}
 
-	// Status bar
-	scrollStatus := "AUTO"
-	if !m.autoScroll {
-		scrollStatus = "MANUAL"
-	}
-	b.WriteString(HelpStyle.Render(fmt.Sprintf("\n%d entries | Scroll: %s", len(filtered), scrollStatus)))
+	b.WriteString(HelpStyle.Render(fmt.Sprintf("\n%d entries", len(filtered))))
 
 	return b.String()
 }
 
 func (m LogViewModel) renderFilterBar() string {
-	type filterDef struct {
-		key   string
-		label string
-		level claude.LogLevel
-	}
-	filters := []filterDef{
-		{"D", "Debug", claude.LevelDEBUG},
-		{"E", "Error", claude.LevelERROR},
-		{"W", "Warn", claude.LevelWARN},
-		{"M", "MCP", claude.LevelMCP},
-		{"S", "Startup", claude.LevelSTARTUP},
-		{"T", "Meta", claude.LevelMETA},
-		{"A", "Attach", claude.LevelATTACHMENT},
-	}
-
 	var parts []string
-	for _, f := range filters {
-		label := formatFilterLabel(f.key, f.label)
+	for i, f := range logFilterDefs {
+		label := f.label
+		if i == m.filterCursor {
+			label = "[" + label + "]"
+		}
 		if m.filterLevels[f.level] {
 			parts = append(parts, FilterActiveStyle.Render(label))
 		} else {
@@ -293,16 +269,6 @@ func (m LogViewModel) renderFilterBar() string {
 	}
 
 	return filterBar
-}
-
-func formatFilterLabel(key, label string) string {
-	keyLower := strings.ToLower(key)
-	labelLower := strings.ToLower(label)
-	idx := strings.Index(labelLower, keyLower)
-	if idx >= 0 {
-		return label[:idx] + "[" + string(label[idx]) + "]" + label[idx+1:]
-	}
-	return "[" + key + "] " + label
 }
 
 func logLevelStyle(level claude.LogLevel) lipgloss.Style {

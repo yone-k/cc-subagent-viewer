@@ -310,18 +310,26 @@ func (m *AppModel) View() string {
 }
 
 func (m *AppModel) footerHelp() string {
-	base := fmt.Sprintf("Session: %s", m.session.SessionID)
+	var keys string
 
-	if m.tabs.Active == 1 {
+	switch m.tabs.Active {
+	case 1:
 		switch m.agentView.Mode() {
 		case AgentViewModeList:
-			return fmt.Sprintf("enter: 会話表示  1-5: タブ切替  q: 終了  %s", base)
+			keys = "enter: 会話表示  1-5: タブ切替  q: 終了"
 		case AgentViewModeConversation:
-			return fmt.Sprintf("j/k: スクロール  X/U/R/H: フィルタ  esc: 戻る  q: 終了  %s", base)
+			keys = "j/k: スクロール  shift+←→: フィルタ選択  enter: フィルタ切替  esc: 戻る  q: 終了"
+		default:
+			keys = "1-5/←→: タブ切替  q: 終了"
 		}
+	case 2:
+		keys = "j/k: スクロール  shift+←→: フィルタ選択  enter: フィルタ切替  /: 検索  q: 終了"
+	default:
+		keys = "1-5/←→: タブ切替  q: 終了"
 	}
 
-	return fmt.Sprintf("1-5/←→: タブ切替  q: 終了  %s", base)
+	session := fmt.Sprintf("Session: %s", m.session.SessionID)
+	return wordWrap(keys, m.width) + "\n" + session
 }
 
 func (m *AppModel) startWatchersCmd() tea.Cmd {

@@ -19,6 +19,8 @@ func makeLogEntry(level claude.LogLevel, message string) claude.LogEntry {
 	}
 }
 
+// enterKey, shiftLeftKey, shiftRightKey are declared in conversationview_test.go (same package)
+
 func TestLogView_UpdateWithEntries(t *testing.T) {
 	m := NewLogViewModel()
 	m.SetSize(80, 24)
@@ -64,10 +66,7 @@ func TestLogView_FilterByLevel(t *testing.T) {
 	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
 	m = newModel.(LogViewModel)
 
-	// Disable DEBUG filter (only show ERROR and WARN)
-	m.filterLevels[claude.LevelDEBUG] = false
-	m.filteredDirty = true
-
+	// DEBUG is disabled by default, so only ERROR and WARN should be visible
 	view := m.View()
 	if strings.Contains(view, "debug msg") {
 		t.Error("filtered out DEBUG should not appear in view")
@@ -81,33 +80,40 @@ func TestLogView_FilterToggle_AllLevels(t *testing.T) {
 	m := NewLogViewModel()
 	m.SetSize(80, 24)
 
-	// All levels should be enabled by default
-	levels := map[string]claude.LogLevel{
-		"D": claude.LevelDEBUG,
-		"E": claude.LevelERROR,
-		"W": claude.LevelWARN,
-		"M": claude.LevelMCP,
-		"S": claude.LevelSTARTUP,
-		"T": claude.LevelMETA,
-		"A": claude.LevelATTACHMENT,
+	// DEBUGはデフォルトオフ、他は全てオン
+	if m.filterLevels[claude.LevelDEBUG] != false {
+		t.Error("DEBUG should be disabled by default")
+	}
+	for _, def := range logFilterDefs[1:] {
+		if !m.filterLevels[def.level] {
+			t.Errorf("level %s should be enabled by default", def.level)
+		}
 	}
 
-	for key, level := range levels {
-		if !m.filterLevels[level] {
-			t.Errorf("level %s should be enabled by default", level)
-		}
-		// Toggle off
-		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
-		m = newModel.(LogViewModel)
-		if m.filterLevels[level] {
-			t.Errorf("level %s should be disabled after toggle with key %s", level, key)
-		}
-		// Toggle back on
-		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
-		m = newModel.(LogViewModel)
-		if !m.filterLevels[level] {
-			t.Errorf("level %s should be re-enabled after second toggle", level)
-		}
+	// filterCursor=0 (Debug) の状態でenterを押すとDEBUGがオンになる
+	newModel, _ := m.Update(enterKey)
+	m = newModel.(LogViewModel)
+	if !m.filterLevels[claude.LevelDEBUG] {
+		t.Error("DEBUG should be enabled after enter at cursor 0")
+	}
+
+	// カーソルを右に移動してError(index=1)をトグル
+	newModel, _ = m.Update(shiftRightKey)
+	m = newModel.(LogViewModel)
+	if m.filterCursor != 1 {
+		t.Errorf("filterCursor = %d, want 1", m.filterCursor)
+	}
+	newModel, _ = m.Update(enterKey)
+	m = newModel.(LogViewModel)
+	if m.filterLevels[claude.LevelERROR] {
+		t.Error("ERROR should be disabled after toggle")
+	}
+
+	// もう一度enterで戻す
+	newModel, _ = m.Update(enterKey)
+	m = newModel.(LogViewModel)
+	if !m.filterLevels[claude.LevelERROR] {
+		t.Error("ERROR should be re-enabled after second toggle")
 	}
 }
 
@@ -116,9 +122,9 @@ func TestLogView_Search(t *testing.T) {
 	m.SetSize(80, 24)
 
 	entries := []claude.LogEntry{
-		makeLogEntry(claude.LevelDEBUG, "hello world"),
-		makeLogEntry(claude.LevelDEBUG, "foo bar"),
-		makeLogEntry(claude.LevelDEBUG, "hello again"),
+		makeLogEntry(claude.LevelERROR, "hello world"),
+		makeLogEntry(claude.LevelERROR, "foo bar"),
+		makeLogEntry(claude.LevelERROR, "hello again"),
 	}
 	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
 	m = newModel.(LogViewModel)
@@ -159,48 +165,69 @@ func TestLogView_AutoScroll(t *testing.T) {
 	m := NewLogViewModel()
 	m.SetSize(80, 24)
 
-	// Default should be autoScroll on
-	if !m.autoScroll {
-		t.Error("autoScroll should be true by default")
+	// With no entries, isAtBottom should be true
+	if !m.isAtBottom() {
+		t.Error("isAtBottom should be true with no entries")
 	}
 
-	// Toggle with f
-	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	// Add many entries to exceed viewport
+	entries := make([]claude.LogEntry, 50)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, "line")
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
 	m = newModel.(LogViewModel)
-	if m.autoScroll {
-		t.Error("autoScroll should be false after toggle")
+
+	// After initial load, should be at bottom
+	if !m.isAtBottom() {
+		t.Error("isAtBottom should be true after initial load")
 	}
 
-	// Toggle back
-	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	// Scroll up - should no longer be at bottom
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	m = newModel.(LogViewModel)
-	if !m.autoScroll {
-		t.Error("autoScroll should be true after second toggle")
+	if m.isAtBottom() {
+		t.Error("isAtBottom should be false after scrolling up")
 	}
 }
 
 func TestLogView_AutoScroll_NewEntries(t *testing.T) {
 	m := NewLogViewModel()
 	m.SetSize(80, 24)
-	m.autoScroll = true
 
-	// Add many entries to fill viewport
+	// Add entries to fill viewport (use ERROR since DEBUG is off by default)
 	entries := make([]claude.LogEntry, 50)
 	for i := range entries {
-		entries[i] = makeLogEntry(claude.LevelDEBUG, "line")
+		entries[i] = makeLogEntry(claude.LevelERROR, "line")
 	}
 	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
 	m = newModel.(LogViewModel)
 
-	// Add more entries
+	// At bottom: new entries should auto-scroll
 	newEntries := []claude.LogEntry{makeLogEntry(claude.LevelERROR, "new entry")}
 	newModel, _ = m.Update(watcher.LogEntriesMsg{Entries: newEntries, Initial: false})
 	m = newModel.(LogViewModel)
 
-	// The view should contain the new entry (auto-scrolled to bottom)
 	view := m.View()
 	if !strings.Contains(view, "new entry") {
 		t.Error("auto-scroll should show new entry at bottom")
+	}
+
+	// Scroll up to leave bottom
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = newModel.(LogViewModel)
+	if m.isAtBottom() {
+		t.Error("should not be at bottom after scrolling up")
+	}
+
+	// Add another entry - should NOT auto-scroll since not at bottom
+	prevOffset := m.scrollOffset
+	newEntries2 := []claude.LogEntry{makeLogEntry(claude.LevelERROR, "another new")}
+	newModel, _ = m.Update(watcher.LogEntriesMsg{Entries: newEntries2, Initial: false})
+	m = newModel.(LogViewModel)
+
+	if m.scrollOffset != prevOffset {
+		t.Errorf("scrollOffset should not change when not at bottom, was %d, got %d", prevOffset, m.scrollOffset)
 	}
 }
 
@@ -227,16 +254,58 @@ func TestLogView_ScrollOffset_ClampOnFilterChange(t *testing.T) {
 	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
 	m = newModel.(LogViewModel)
 
-	// Turn off autoScroll and set scrollOffset to a large value
-	m.autoScroll = false
+	// Set scrollOffset to a large value
 	m.scrollOffset = 100
 
-	// Toggle off DEBUG filter (key "D") - only 1 ERROR entry should remain
-	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("D")})
+	// DEBUGはデフォルトオフなので、現在はERRORのみ(1件)が表示
+	// filterCursorは0(Debug)の状態。Enterを押してDEBUGをオンにする
+	newModel, _ = m.Update(enterKey)
 	m = newModel.(LogViewModel)
 
-	// scrollOffset should be clamped to the number of filtered entries (1)
-	if m.scrollOffset > 1 {
-		t.Errorf("scrollOffset = %d, want <= 1 after filter change", m.scrollOffset)
+	// scrollOffset should be clamped to the number of filtered entries (4)
+	if m.scrollOffset > 4 {
+		t.Errorf("scrollOffset = %d, want <= 4 after filter change", m.scrollOffset)
+	}
+}
+
+func TestLogView_FilterCursorNavigation(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24)
+
+	// Initial cursor should be at 0
+	if m.filterCursor != 0 {
+		t.Errorf("initial filterCursor = %d, want 0", m.filterCursor)
+	}
+
+	// Move right to the last position
+	for i := 0; i < len(logFilterDefs)-1; i++ {
+		newModel, _ := m.Update(shiftRightKey)
+		m = newModel.(LogViewModel)
+	}
+	if m.filterCursor != len(logFilterDefs)-1 {
+		t.Errorf("filterCursor = %d, want %d", m.filterCursor, len(logFilterDefs)-1)
+	}
+
+	// Right at the end should not go further
+	newModel, _ := m.Update(shiftRightKey)
+	m = newModel.(LogViewModel)
+	if m.filterCursor != len(logFilterDefs)-1 {
+		t.Errorf("filterCursor should stay at %d, got %d", len(logFilterDefs)-1, m.filterCursor)
+	}
+
+	// Move left back to 0
+	for i := 0; i < len(logFilterDefs)-1; i++ {
+		newModel, _ := m.Update(shiftLeftKey)
+		m = newModel.(LogViewModel)
+	}
+	if m.filterCursor != 0 {
+		t.Errorf("filterCursor = %d, want 0", m.filterCursor)
+	}
+
+	// Left at 0 should not go negative
+	newModel, _ = m.Update(shiftLeftKey)
+	m = newModel.(LogViewModel)
+	if m.filterCursor != 0 {
+		t.Errorf("filterCursor should stay at 0, got %d", m.filterCursor)
 	}
 }

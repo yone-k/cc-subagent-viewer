@@ -32,13 +32,12 @@ func testEntries() []claude.ConversationEntry {
 }
 
 var (
-	escKey = tea.KeyMsg{Type: tea.KeyEsc}
-	jKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
-	kKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
-	xKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")}
-	uKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("U")}
-	rKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")}
-	hKey   = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")}
+	escKey   = tea.KeyMsg{Type: tea.KeyEsc}
+	jKey     = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	kKey     = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
+	enterKey      = tea.KeyMsg{Type: tea.KeyEnter}
+	shiftLeftKey  = tea.KeyMsg{Type: tea.KeyShiftLeft}
+	shiftRightKey = tea.KeyMsg{Type: tea.KeyShiftRight}
 )
 
 func TestConversationView_EmptyState(t *testing.T) {
@@ -90,40 +89,34 @@ func TestConversationView_DefaultFilterShowsTextOnly(t *testing.T) {
 func TestConversationView_FilterToggle(t *testing.T) {
 	m := newTestConversationView(testEntries())
 
-	// Initially text=true. Toggle text off with X.
-	m, handled := m.Update(xKey)
+	// filterCursor=0 (Text)。TextはデフォルトON。Enterでトグルオフ。
+	m, handled := m.Update(enterKey)
 	if !handled {
-		t.Error("X key should be handled")
+		t.Error("enter key should be handled")
 	}
 	if m.filterTypes["text"] != false {
-		t.Error("after X, text filter should be false")
+		t.Error("after enter at cursor 0, text filter should be false")
 	}
 
-	// Toggle tool_use on with U
-	m, handled = m.Update(uKey)
-	if !handled {
-		t.Error("U key should be handled")
-	}
+	// カーソルを右に移動してTool(index=1)に移動し、Enterでトグルオン
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
 	if m.filterTypes["tool_use"] != true {
-		t.Error("after U, tool_use filter should be true")
+		t.Error("after enter at cursor 1, tool_use filter should be true")
 	}
 
-	// Toggle tool_result on with R
-	m, handled = m.Update(rKey)
-	if !handled {
-		t.Error("R key should be handled")
-	}
+	// カーソルを右に移動してResult(index=2)に移動し、Enterでトグルオン
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
 	if m.filterTypes["tool_result"] != true {
-		t.Error("after R, tool_result filter should be true")
+		t.Error("after enter at cursor 2, tool_result filter should be true")
 	}
 
-	// Toggle thinking on with H
-	m, handled = m.Update(hKey)
-	if !handled {
-		t.Error("H key should be handled")
-	}
+	// カーソルを右に移動してThinking(index=3)に移動し、Enterでトグルオン
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
 	if m.filterTypes["thinking"] != true {
-		t.Error("after H, thinking filter should be true")
+		t.Error("after enter at cursor 3, thinking filter should be true")
 	}
 
 	// Verify the view now shows tool/result/thinking but not text
@@ -145,8 +138,8 @@ func TestConversationView_FilterToggle(t *testing.T) {
 func TestConversationView_AllFiltersOffShowsMessage(t *testing.T) {
 	m := newTestConversationView(testEntries())
 
-	// Turn off text (the only default-on filter)
-	m, _ = m.Update(xKey)
+	// Turn off text (the only default-on filter) - cursor is at 0 (Text)
+	m, _ = m.Update(enterKey)
 
 	view := m.View()
 	if !strings.Contains(view, "フィルタ条件に一致するエントリなし") {
@@ -162,30 +155,25 @@ func TestConversationView_Scroll(t *testing.T) {
 	}
 	m := newTestConversationView(entries)
 
-	// Initially scrollOffset=0
-	if m.scrollOffset != 0 {
-		t.Fatalf("initial scrollOffset = %d, want 0", m.scrollOffset)
-	}
-
-	// Scroll down with j
-	m, handled := m.Update(jKey)
-	if !handled {
-		t.Error("j key should be handled")
-	}
-	if m.scrollOffset != 1 {
-		t.Errorf("after j, scrollOffset = %d, want 1", m.scrollOffset)
-	}
-
-	// Scroll down more
-	m, _ = m.Update(jKey)
-	if m.scrollOffset != 2 {
-		t.Errorf("after second j, scrollOffset = %d, want 2", m.scrollOffset)
+	// SetData now scrolls to bottom, so isAtBottom should be true
+	if !m.isAtBottom() {
+		t.Fatal("after SetData, isAtBottom should be true")
 	}
 
 	// Scroll up with k
-	m, _ = m.Update(kKey)
-	if m.scrollOffset != 1 {
-		t.Errorf("after k, scrollOffset = %d, want 1", m.scrollOffset)
+	m, handled := m.Update(kKey)
+	if !handled {
+		t.Error("k key should be handled")
+	}
+	if m.isAtBottom() {
+		t.Error("after k, should not be at bottom")
+	}
+
+	// Scroll down with j should increase scrollOffset
+	prevOffset := m.scrollOffset
+	m, _ = m.Update(jKey)
+	if m.scrollOffset != prevOffset+1 {
+		t.Errorf("after j, scrollOffset = %d, want %d", m.scrollOffset, prevOffset+1)
 	}
 
 	// At 0, k should not go negative
@@ -221,32 +209,42 @@ func TestConversationView_SetDataResetsState(t *testing.T) {
 	// Simulate scrolling
 	m.scrollOffset = 5
 
-	// SetData should reset scroll state
+	// SetData should scroll to bottom
 	m.SetData("new-agent", []claude.ConversationEntry{
 		{Type: claude.EntryTypeUser, Content: []claude.ContentBlock{{Type: "text", Text: "New"}}},
 	}, nil)
 
-	if m.scrollOffset != 0 {
-		t.Errorf("after SetData, scrollOffset = %d, want 0", m.scrollOffset)
+	if !m.isAtBottom() {
+		t.Error("after SetData, isAtBottom should be true")
 	}
 	if m.agentID != "new-agent" {
 		t.Errorf("after SetData, agentID = %q, want %q", m.agentID, "new-agent")
 	}
-	if !m.filteredDirty {
-		t.Error("after SetData, filteredDirty should be true")
-	}
+	// filteredDirty is set to true by SetData, but maxScroll() rebuilds the cache,
+	// so by the time SetData returns, filteredDirty is false again.
 }
 
 func TestConversationView_UpdateEntriesMarksDirty(t *testing.T) {
-	entries := testEntries()
+	// Use long text entries so maxScroll > 0 (enables scroll-up to leave bottom)
+	longText := strings.Repeat("Line of text.\n", 50)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
 	m := newTestConversationView(entries)
 
 	// Build cache through Update() round-trip (value receiver + clampScroll triggers filteredBlocks)
-	m, _ = m.Update(uKey) // toggle filter on
-	m, _ = m.Update(uKey) // toggle back to original
+	// カーソルを1(Tool)に移動してenterでtool_useをON
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
+	// もう一度enterでtool_useをOFF（元に戻す）
+	m, _ = m.Update(enterKey)
 	if m.filteredDirty {
 		t.Fatal("after filter round-trip, filteredDirty should be false")
 	}
+
+	// Scroll up so we are not at bottom (UpdateEntries only preserves filteredDirty
+	// when not at bottom, since maxScroll() rebuilds cache)
+	m.scrollOffset = 0
 
 	// UpdateEntries should set dirty
 	m.UpdateEntries(entries, nil)
@@ -279,10 +277,16 @@ func TestConversationView_ContentBlockRendering(t *testing.T) {
 	}
 	m := newTestConversationView(entries)
 
-	// Enable all filters
-	m, _ = m.Update(uKey) // tool_use on
-	m, _ = m.Update(rKey) // tool_result on
-	m, _ = m.Update(hKey) // thinking on
+	// Enable all filters using cursor navigation
+	// cursor=0 (Text already on), move to 1 (Tool) and enable
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
+	// move to 2 (Result) and enable
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
+	// move to 3 (Thinking) and enable
+	m, _ = m.Update(shiftRightKey)
+	m, _ = m.Update(enterKey)
 
 	view := m.View()
 
@@ -339,6 +343,72 @@ func TestConversationView_SeparatorShowsCorrectTag(t *testing.T) {
 	}
 	if !strings.Contains(view, "[A]") {
 		t.Error("assistant entry should have [A] separator tag")
+	}
+}
+
+func TestConversationView_AutoScrollOnUpdateEntries(t *testing.T) {
+	longText := strings.Repeat("This is a line.\n", 50)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
+	m := newTestConversationView(entries)
+
+	// Should be at bottom after SetData
+	if !m.isAtBottom() {
+		t.Fatal("should be at bottom after SetData")
+	}
+
+	// UpdateEntries while at bottom should keep at bottom
+	moreEntries := append(entries, claude.ConversationEntry{
+		Type: claude.EntryTypeUser, Content: []claude.ContentBlock{{Type: "text", Text: "new message"}},
+	})
+	m.UpdateEntries(moreEntries, nil)
+	if !m.isAtBottom() {
+		t.Error("should still be at bottom after UpdateEntries when was at bottom")
+	}
+
+	// Scroll up, then UpdateEntries should NOT scroll to bottom
+	m.scrollOffset = 0
+	m.UpdateEntries(moreEntries, nil)
+	if m.isAtBottom() {
+		t.Error("should not be at bottom after UpdateEntries when was not at bottom")
+	}
+}
+
+func TestConversationView_FilterCursorNavigation(t *testing.T) {
+	m := newTestConversationView(testEntries())
+
+	// Initial cursor at 0
+	if m.filterCursor != 0 {
+		t.Errorf("initial filterCursor = %d, want 0", m.filterCursor)
+	}
+
+	// Move right to the last position (3)
+	for i := 0; i < len(convFilterDefs)-1; i++ {
+		m, _ = m.Update(shiftRightKey)
+	}
+	if m.filterCursor != len(convFilterDefs)-1 {
+		t.Errorf("filterCursor = %d, want %d", m.filterCursor, len(convFilterDefs)-1)
+	}
+
+	// Right at the end should not go further
+	m, _ = m.Update(shiftRightKey)
+	if m.filterCursor != len(convFilterDefs)-1 {
+		t.Errorf("filterCursor should stay at %d, got %d", len(convFilterDefs)-1, m.filterCursor)
+	}
+
+	// Move left back to 0
+	for i := 0; i < len(convFilterDefs)-1; i++ {
+		m, _ = m.Update(shiftLeftKey)
+	}
+	if m.filterCursor != 0 {
+		t.Errorf("filterCursor = %d, want 0", m.filterCursor)
+	}
+
+	// Left at 0 should not go negative
+	m, _ = m.Update(shiftLeftKey)
+	if m.filterCursor != 0 {
+		t.Errorf("filterCursor should stay at 0, got %d", m.filterCursor)
 	}
 }
 

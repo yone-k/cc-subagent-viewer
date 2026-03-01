@@ -7,12 +7,25 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/yone/subagent-viewer/internal/claude"
 )
 
 // renderedBlock is a pre-rendered block for display in the conversation view.
 type renderedBlock struct {
 	lines []string
+}
+
+type convFilterDef struct {
+	label     string
+	blockType string
+}
+
+var convFilterDefs = []convFilterDef{
+	{"Text", "text"},
+	{"Tool", "tool_use"},
+	{"Result", "tool_result"},
+	{"Thinking", "thinking"},
 }
 
 // ConversationViewModel manages the single-column conversation view with filtering.
@@ -22,6 +35,7 @@ type ConversationViewModel struct {
 	agentID       string
 	filterTypes   map[string]bool
 	filteredDirty bool
+	filterCursor  int
 	filteredCache []renderedBlock
 	scrollOffset  int
 	width, height int
@@ -52,41 +66,40 @@ func (m *ConversationViewModel) SetData(agentID string, entries []claude.Convers
 	m.agentID = agentID
 	m.entries = entries
 	m.info = info
-	m.scrollOffset = 0
 	m.filteredDirty = true
+	m.scrollOffset = m.maxScroll()
 }
 
 // UpdateEntries updates entries and info, preserving scroll state where possible.
 func (m *ConversationViewModel) UpdateEntries(entries []claude.ConversationEntry, info *claude.SubagentInfo) {
+	wasAtBottom := m.isAtBottom()
 	m.entries = entries
 	m.info = info
 	m.filteredDirty = true
+	if wasAtBottom {
+		m.scrollOffset = m.maxScroll()
+	}
 }
 
 // Update handles key messages. Returns the updated model and whether the key was handled.
 // If handled is false (on Esc), the caller should navigate back.
 func (m ConversationViewModel) Update(msg tea.KeyMsg) (ConversationViewModel, bool) {
 	switch {
-	case key.Matches(msg, ConversationKeys.FilterText):
-		m.filterTypes["text"] = !m.filterTypes["text"]
-		m.filteredDirty = true
-		m.clampScroll()
+	case key.Matches(msg, ConversationKeys.FilterLeft):
+		if m.filterCursor > 0 {
+			m.filterCursor--
+		}
 		return m, true
 
-	case key.Matches(msg, ConversationKeys.FilterToolUse):
-		m.filterTypes["tool_use"] = !m.filterTypes["tool_use"]
-		m.filteredDirty = true
-		m.clampScroll()
+	case key.Matches(msg, ConversationKeys.FilterRight):
+		if m.filterCursor < len(convFilterDefs)-1 {
+			m.filterCursor++
+		}
 		return m, true
 
-	case key.Matches(msg, ConversationKeys.FilterToolResult):
-		m.filterTypes["tool_result"] = !m.filterTypes["tool_result"]
-		m.filteredDirty = true
-		m.clampScroll()
-		return m, true
-
-	case key.Matches(msg, ConversationKeys.FilterThinking):
-		m.filterTypes["thinking"] = !m.filterTypes["thinking"]
+	case key.Matches(msg, ConversationKeys.FilterToggle):
+		blockType := convFilterDefs[m.filterCursor].blockType
+		m.filterTypes[blockType] = !m.filterTypes[blockType]
 		m.filteredDirty = true
 		m.clampScroll()
 		return m, true
@@ -106,6 +119,20 @@ func (m ConversationViewModel) Update(msg tea.KeyMsg) (ConversationViewModel, bo
 	}
 
 	return m, true
+}
+
+func (m *ConversationViewModel) maxScroll() int {
+	total := m.totalLines()
+	viewH := m.viewHeight()
+	ms := total - viewH
+	if ms < 0 {
+		ms = 0
+	}
+	return ms
+}
+
+func (m ConversationViewModel) isAtBottom() bool {
+	return m.scrollOffset >= m.maxScroll()
 }
 
 // clampScroll ensures scrollOffset does not exceed the total number of lines.
@@ -177,7 +204,9 @@ func (m ConversationViewModel) View() string {
 	}
 
 	visible := allLines[start:end]
-	return header + "\n" + filterBar + "\n" + strings.Join(visible, "\n")
+	content := header + "\n" + filterBar + "\n" + strings.Join(visible, "\n")
+	content += HelpStyle.Render(fmt.Sprintf("\n\n%d entries", len(m.entries)))
+	return content
 }
 
 // renderHeader renders the header line with agent name and entry count.
@@ -197,21 +226,12 @@ func (m ConversationViewModel) renderHeader() string {
 
 // renderConversationFilterBar renders the filter bar for content type filtering.
 func (m ConversationViewModel) renderConversationFilterBar() string {
-	type filterDef struct {
-		key       string
-		label     string
-		blockType string
-	}
-	filters := []filterDef{
-		{"X", "teXt", "text"},
-		{"U", "tool_Use", "tool_use"},
-		{"R", "tool_Result", "tool_result"},
-		{"H", "tHinking", "thinking"},
-	}
-
 	var parts []string
-	for _, f := range filters {
-		label := formatFilterLabel(f.key, f.label)
+	for i, f := range convFilterDefs {
+		label := f.label
+		if i == m.filterCursor {
+			label = "[" + label + "]"
+		}
 		if m.filterTypes[f.blockType] {
 			parts = append(parts, FilterActiveStyle.Render(label))
 		} else {
@@ -318,7 +338,7 @@ func wordWrap(text string, width int) string {
 
 		currentLineLen := 0
 		for i, word := range words {
-			wordLen := len([]rune(word))
+			wordLen := lipgloss.Width(word)
 			if i == 0 {
 				result.WriteString(word)
 				currentLineLen = wordLen

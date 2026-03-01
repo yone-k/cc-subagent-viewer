@@ -51,55 +51,29 @@ var GlobalKeys = GlobalKeyMap{
 
 // LogKeyMap defines keybindings for the Logs tab.
 type LogKeyMap struct {
-	FilterDEBUG      key.Binding
-	FilterERROR      key.Binding
-	FilterWARN       key.Binding
-	FilterMCP        key.Binding
-	FilterSTARTUP    key.Binding
-	FilterMETA       key.Binding
-	FilterATTACHMENT key.Binding
-	Search           key.Binding
-	AutoScroll       key.Binding
-	Escape           key.Binding
+	FilterLeft   key.Binding
+	FilterRight  key.Binding
+	FilterToggle key.Binding
+	Search       key.Binding
+	Escape       key.Binding
 }
 
 var LogKeys = LogKeyMap{
-	FilterDEBUG: key.NewBinding(
-		key.WithKeys("D"),
-		key.WithHelp("D", "DEBUG"),
+	FilterLeft: key.NewBinding(
+		key.WithKeys("shift+left"),
+		key.WithHelp("shift+←", "フィルタ左"),
 	),
-	FilterERROR: key.NewBinding(
-		key.WithKeys("E"),
-		key.WithHelp("E", "ERROR"),
+	FilterRight: key.NewBinding(
+		key.WithKeys("shift+right"),
+		key.WithHelp("shift+→", "フィルタ右"),
 	),
-	FilterWARN: key.NewBinding(
-		key.WithKeys("W"),
-		key.WithHelp("W", "WARN"),
-	),
-	FilterMCP: key.NewBinding(
-		key.WithKeys("M"),
-		key.WithHelp("M", "MCP"),
-	),
-	FilterSTARTUP: key.NewBinding(
-		key.WithKeys("S"),
-		key.WithHelp("S", "STARTUP"),
-	),
-	// T is used because M is taken by MCP
-	FilterMETA: key.NewBinding(
-		key.WithKeys("T"),
-		key.WithHelp("T", "META"),
-	),
-	FilterATTACHMENT: key.NewBinding(
-		key.WithKeys("A"),
-		key.WithHelp("A", "ATTACHMENT"),
+	FilterToggle: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "フィルタ切替"),
 	),
 	Search: key.NewBinding(
 		key.WithKeys("/"),
 		key.WithHelp("/", "検索"),
-	),
-	AutoScroll: key.NewBinding(
-		key.WithKeys("f"),
-		key.WithHelp("f", "自動スクロール"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
@@ -126,29 +100,24 @@ var FileKeys = FileKeyMap{
 
 // ConversationKeyMap defines keybindings for the conversation view.
 type ConversationKeyMap struct {
-	FilterText       key.Binding
-	FilterToolUse    key.Binding
-	FilterToolResult key.Binding
-	FilterThinking   key.Binding
-	Escape           key.Binding
+	FilterLeft   key.Binding
+	FilterRight  key.Binding
+	FilterToggle key.Binding
+	Escape       key.Binding
 }
 
 var ConversationKeys = ConversationKeyMap{
-	FilterText: key.NewBinding(
-		key.WithKeys("X"),
-		key.WithHelp("X", "Text"),
+	FilterLeft: key.NewBinding(
+		key.WithKeys("shift+left"),
+		key.WithHelp("shift+←", "フィルタ左"),
 	),
-	FilterToolUse: key.NewBinding(
-		key.WithKeys("U"),
-		key.WithHelp("U", "Tool"),
+	FilterRight: key.NewBinding(
+		key.WithKeys("shift+right"),
+		key.WithHelp("shift+→", "フィルタ右"),
 	),
-	FilterToolResult: key.NewBinding(
-		key.WithKeys("R"),
-		key.WithHelp("R", "Result"),
-	),
-	FilterThinking: key.NewBinding(
-		key.WithKeys("H"),
-		key.WithHelp("H", "Thinking"),
+	FilterToggle: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "フィルタ切替"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),

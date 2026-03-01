@@ -183,6 +183,9 @@ func (m AgentViewModel) viewAgents() string {
 			b.WriteString(line + "\n")
 			b.WriteString(fmt.Sprintf("    %s\n", DimStyle.Render(prompt)))
 		}
+		if i < len(m.agents)-1 {
+			b.WriteString("\n")
+		}
 	}
 
 	return b.String()
