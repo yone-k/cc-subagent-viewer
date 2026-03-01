@@ -30,3 +30,15 @@ type WatcherErrorMsg struct {
 	Source string
 	Err    error
 }
+
+// SubagentsDiscoveredMsg is sent when subagent files are discovered or updated.
+type SubagentsDiscoveredMsg struct {
+	Agents []claude.SubagentInfo
+}
+
+// ConversationUpdatedMsg is sent when a subagent's conversation is updated.
+type ConversationUpdatedMsg struct {
+	AgentID string
+	Entries []claude.ConversationEntry
+	Info    *claude.SubagentInfo
+}

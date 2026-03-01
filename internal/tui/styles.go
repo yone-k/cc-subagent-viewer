@@ -21,8 +21,6 @@ var (
 	ActiveTabStyle = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(colorPrimary).
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colorPrimary).
 		Padding(0, 2)
 
 	InactiveTabStyle = lipgloss.NewStyle().
@@ -128,4 +126,22 @@ var (
 	StatsValueStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#DDDDDD"}).
 		Bold(true)
+)
+
+// Conversation styles
+var (
+	ConversationUserStyle = lipgloss.NewStyle().
+		Foreground(colorSuccess).
+		Bold(true)
+
+	ConversationAssistantStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary)
+
+	ConversationToolStyle = lipgloss.NewStyle().
+		Foreground(colorCyan).
+		Italic(true)
+
+	ConversationThinkingStyle = lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Italic(true)
 )

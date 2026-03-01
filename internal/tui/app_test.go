@@ -190,6 +190,34 @@ func TestAppModel_WatcherErrorMsg(t *testing.T) {
 	}
 }
 
+func TestAppModel_ArrowKeyTabSwitch(t *testing.T) {
+	m := NewAppModel(nil)
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+
+	// Right arrow should move to next tab
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mPtr := newModel.(*AppModel)
+	if mPtr.tabs.Active != 1 {
+		t.Errorf("Active tab after Right = %d, want 1", mPtr.tabs.Active)
+	}
+
+	// Right arrow again
+	newModel, _ = mPtr.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mPtr = newModel.(*AppModel)
+	if mPtr.tabs.Active != 2 {
+		t.Errorf("Active tab after Right = %d, want 2", mPtr.tabs.Active)
+	}
+
+	// Left arrow should move to previous tab
+	newModel, _ = mPtr.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	mPtr = newModel.(*AppModel)
+	if mPtr.tabs.Active != 1 {
+		t.Errorf("Active tab after Left = %d, want 1", mPtr.tabs.Active)
+	}
+}
+
 func TestAppModel_CleanupNilCancel(t *testing.T) {
 	m := NewAppModel(nil)
 	// cancelFunc is nil — Cleanup should not panic
@@ -205,5 +233,43 @@ func TestAppModel_CleanupCallsCancel(t *testing.T) {
 
 	if !called {
 		t.Error("Cleanup should call cancelFunc")
+	}
+}
+
+func TestAppModel_SubagentsDiscoveredMsg(t *testing.T) {
+	m := NewAppModel(nil)
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+
+	agents := []claude.SubagentInfo{
+		{AgentID: "agent1", Slug: "test-agent", Prompt: "Hello", EntryCount: 5},
+	}
+	newModel, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	mPtr := newModel.(*AppModel)
+
+	if len(mPtr.taskView.agents) != 1 {
+		t.Errorf("agents count = %d, want 1", len(mPtr.taskView.agents))
+	}
+}
+
+func TestAppModel_ConversationUpdatedMsg(t *testing.T) {
+	m := NewAppModel(nil)
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeUser, Content: []claude.ContentBlock{{Type: "text", Text: "Hello"}}},
+	}
+	newModel, _ := m.Update(watcher.ConversationUpdatedMsg{
+		AgentID: "agent1",
+		Entries: entries,
+		Info:    &claude.SubagentInfo{AgentID: "agent1", Slug: "test"},
+	})
+	mPtr := newModel.(*AppModel)
+
+	if len(mPtr.taskView.conversations["agent1"]) != 1 {
+		t.Errorf("conversation entries = %d, want 1", len(mPtr.taskView.conversations["agent1"]))
 	}
 }

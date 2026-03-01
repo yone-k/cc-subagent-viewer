@@ -1,9 +1,11 @@
 package claude
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -50,4 +52,37 @@ func FileHistoryDir(sessionID string) string {
 // GlobalConfigPath returns the path to ~/.claude.json
 func GlobalConfigPath() string {
 	return filepath.Join(homeDir, ".claude.json")
+}
+
+// ProjectsDir returns the path to ~/.claude/projects
+func ProjectsDir() string {
+	return filepath.Join(ClaudeDir(), "projects")
+}
+
+// EncodeProjectPath encodes a project path for use in the projects directory.
+// It replaces "/" and "." with "-" to match Claude Code's encoding.
+func EncodeProjectPath(projectPath string) string {
+	s := strings.ReplaceAll(projectPath, "/", "-")
+	s = strings.ReplaceAll(s, ".", "-")
+	return s
+}
+
+// SubagentsDir returns the path to the subagents directory for a given project and session.
+func SubagentsDir(projectPath, sessionID string) string {
+	encoded := EncodeProjectPath(projectPath)
+	return filepath.Join(ProjectsDir(), encoded, sessionID, "subagents")
+}
+
+// FindSubagentsDirBySessionID searches for a subagents directory by session ID
+// across all project directories. Returns the path if found, or an error.
+func FindSubagentsDirBySessionID(sessionID string) (string, error) {
+	pattern := filepath.Join(ProjectsDir(), "*", sessionID, "subagents")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("glob search for subagents dir: %w", err)
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("subagents directory not found for session %s", sessionID)
+	}
+	return matches[0], nil
 }

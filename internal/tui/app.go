@@ -151,6 +151,16 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fileView = newModel.(FileViewModel)
 		return m, cmd
 
+	case watcher.SubagentsDiscoveredMsg:
+		newModel, cmd := m.taskView.Update(msg)
+		m.taskView = newModel.(TaskViewModel)
+		return m, cmd
+
+	case watcher.ConversationUpdatedMsg:
+		newModel, cmd := m.taskView.Update(msg)
+		m.taskView = newModel.(TaskViewModel)
+		return m, cmd
+
 	case StatsUpdatedMsg:
 		newModel, cmd := m.statsView.Update(msg)
 		m.statsView = newModel.(StatsViewModel)
@@ -210,9 +220,20 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tabs.SetActive(3)
 		return m, nil
 	case key.Matches(msg, GlobalKeys.NextTab):
+		// In task sub-modes, arrow keys should not switch tabs
+		if m.tabs.Active == 0 && m.taskView.Mode() != TaskViewModeTasks {
+			if msg.String() == "right" || msg.String() == "left" {
+				break // fall through to tab delegation below
+			}
+		}
 		m.tabs.NextTab()
 		return m, nil
 	case key.Matches(msg, GlobalKeys.PrevTab):
+		if m.tabs.Active == 0 && m.taskView.Mode() != TaskViewModeTasks {
+			if msg.String() == "right" || msg.String() == "left" {
+				break
+			}
+		}
 		m.tabs.PrevTab()
 		return m, nil
 	}
@@ -280,9 +301,26 @@ func (m *AppModel) View() string {
 		b.WriteString(WarningStyle.Render("⚠ " + m.lastError))
 		b.WriteString("\n")
 	}
-	b.WriteString(HelpStyle.Render(fmt.Sprintf("1-4: タブ切替  q: 終了  Session: %s", m.session.SessionID)))
+	b.WriteString(HelpStyle.Render(m.footerHelp()))
 
 	return b.String()
+}
+
+func (m *AppModel) footerHelp() string {
+	base := fmt.Sprintf("Session: %s", m.session.SessionID)
+
+	if m.tabs.Active == 0 {
+		switch m.taskView.Mode() {
+		case TaskViewModeAgents:
+			return fmt.Sprintf("enter: 会話表示  esc: 戻る  q: 終了  %s", base)
+		case TaskViewModeConversation:
+			return fmt.Sprintf("j/k: スクロール  esc: 戻る  q: 終了  %s", base)
+		default:
+			return fmt.Sprintf("1-4/←→: タブ切替  a: エージェント  q: 終了  %s", base)
+		}
+	}
+
+	return fmt.Sprintf("1-4/←→: タブ切替  q: 終了  %s", base)
 }
 
 func (m *AppModel) startWatchersCmd() tea.Cmd {
@@ -320,6 +358,14 @@ func (m *AppModel) StartWatchers(program *tea.Program) {
 		fw := watcher.NewFileWatcher(fhDir, program)
 		go fw.Start(ctx)
 	}
+
+	// Start conversation watcher for subagent JSONL files
+	var subagentsDir string
+	if m.session.Project != "" {
+		subagentsDir = claude.SubagentsDir(m.session.Project, sessionID)
+	}
+	cw := watcher.NewConversationWatcher(subagentsDir, sessionID, program, claude.FindSubagentsDirBySessionID)
+	go cw.Start(ctx)
 }
 
 // Cleanup stops all watchers.

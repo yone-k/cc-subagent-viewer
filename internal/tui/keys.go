@@ -31,12 +31,12 @@ var GlobalKeys = GlobalKeyMap{
 		key.WithHelp("4", "統計"),
 	),
 	NextTab: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "次のタブ"),
+		key.WithKeys("tab", "right"),
+		key.WithHelp("tab/→", "次のタブ"),
 	),
 	PrevTab: key.NewBinding(
-		key.WithKeys("shift+tab"),
-		key.WithHelp("shift+tab", "前のタブ"),
+		key.WithKeys("shift+tab", "left"),
+		key.WithHelp("shift+tab/←", "前のタブ"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
@@ -116,5 +116,22 @@ var FileKeys = FileKeyMap{
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
 		key.WithHelp("esc", "一覧に戻る"),
+	),
+}
+
+// TaskKeyMap defines keybindings for the Tasks tab.
+type TaskKeyMap struct {
+	ShowAgents key.Binding
+	Escape     key.Binding
+}
+
+var TaskKeys = TaskKeyMap{
+	ShowAgents: key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "エージェント"),
+	),
+	Escape: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "戻る"),
 	),
 }
