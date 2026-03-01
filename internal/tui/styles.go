@@ -1,19 +1,23 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
 
-// Color palette - centralized color definitions for consistent theming.
-// Light and Dark values are intentionally the same for accent colors
-// to ensure visibility on both light and dark terminals.
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
+)
+
+// Color palette - ANSI 16 colors for terminal theme integration.
+// Colors follow the user's terminal color scheme (Solarized, Dracula, Catppuccin, etc.).
 var (
-	colorPrimary = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
-	colorSuccess = lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}
-	colorWarning = lipgloss.AdaptiveColor{Light: "#DBBD30", Dark: "#DBBD30"}
-	colorMuted   = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#626262"}
-	colorDanger  = lipgloss.AdaptiveColor{Light: "#CC3333", Dark: "#882222"}
-	colorCyan    = lipgloss.AdaptiveColor{Light: "#00AAAA", Dark: "#00CCCC"}
-	colorMagenta = lipgloss.AdaptiveColor{Light: "#AA00AA", Dark: "#CC00CC"}
-	colorBlue    = lipgloss.AdaptiveColor{Light: "#3333CC", Dark: "#5555FF"}
+	colorPrimary = lipgloss.Color("13") // Bright Magenta
+	colorSuccess = lipgloss.Color("2")  // Green
+	colorWarning = lipgloss.Color("3")  // Yellow
+	colorMuted = lipgloss.Color("7") // White + Faint - dim/secondary elements
+	colorDanger  = lipgloss.Color("1")  // Red
+	colorCyan    = lipgloss.Color("6")  // Cyan
+	colorMagenta = lipgloss.Color("5")  // Magenta
+	colorBlue    = lipgloss.Color("4")  // Blue
 )
 
 // Tab styles
@@ -25,6 +29,7 @@ var (
 
 	InactiveTabStyle = lipgloss.NewStyle().
 		Foreground(colorMuted).
+		Faint(true).
 		Padding(0, 2)
 
 	TabGapStyle = lipgloss.NewStyle().
@@ -43,6 +48,7 @@ var (
 
 	StatusPending = lipgloss.NewStyle().
 		Foreground(colorMuted).
+		Faint(true).
 		SetString("○")
 
 	StatusBlocked = lipgloss.NewStyle().
@@ -53,7 +59,8 @@ var (
 // Log level styles
 var (
 	LogLevelDEBUG = lipgloss.NewStyle().
-		Foreground(colorMuted)
+		Foreground(colorMuted).
+		Faint(true)
 
 	LogLevelERROR = lipgloss.NewStyle().
 		Foreground(colorDanger).
@@ -88,10 +95,12 @@ var (
 		Padding(0, 1)
 
 	HelpStyle = lipgloss.NewStyle().
-		Foreground(colorMuted)
+		Foreground(colorMuted).
+		Faint(true)
 
 	EmptyStateStyle = lipgloss.NewStyle().
 		Foreground(colorMuted).
+		Faint(true).
 		Italic(true).
 		Padding(2, 4)
 
@@ -108,25 +117,49 @@ var (
 		Foreground(colorSuccess)
 
 	FilterInactiveStyle = lipgloss.NewStyle().
-		Foreground(colorMuted)
+		Foreground(colorMuted).
+		Faint(true)
 
 	ProgressBarFilled = lipgloss.NewStyle().
 		Foreground(colorSuccess)
 
 	ProgressBarEmpty = lipgloss.NewStyle().
-		Foreground(colorMuted)
+		Foreground(colorMuted).
+		Faint(true)
 
 	DimStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"})
+		Foreground(colorMuted).
+		Faint(true)
 
 	StatsLabelStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"}).
+		Foreground(colorMuted).
+		Faint(true).
 		Width(20)
 
 	StatsValueStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#DDDDDD"}).
 		Bold(true)
+
+	// Selected item styles for list views
+	SelectedLabelStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true)
+
+	SelectedDetailStyle = lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Faint(true)
 )
+
+// truncateText replaces newlines with spaces and truncates to maxWidth display columns, appending "..." if needed.
+// Uses display width (East Asian full-width characters count as 2 columns) for accurate TUI rendering.
+func truncateText(s string, maxWidth int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.Join(strings.Fields(s), " ")
+	if runewidth.StringWidth(s) <= maxWidth {
+		return s
+	}
+	return runewidth.Truncate(s, maxWidth, "...")
+}
 
 // Conversation styles
 var (
@@ -143,10 +176,12 @@ var (
 
 	ConversationThinkingStyle = lipgloss.NewStyle().
 		Foreground(colorMuted).
+		Faint(true).
 		Italic(true)
 
 	ConversationSeparatorStyle = lipgloss.NewStyle().
-		Foreground(colorMuted)
+		Foreground(colorMuted).
+		Faint(true)
 
 	ConversationToolResultStyle = lipgloss.NewStyle().
 		Foreground(colorCyan)

@@ -53,20 +53,56 @@ func TestSelectorModel_EmptyList(t *testing.T) {
 }
 
 func TestSessionItem_LongFirstInput(t *testing.T) {
-	longInput := strings.Repeat("a", 61) // 61 characters, exceeds 60 limit
+	longInput := strings.Repeat("a", 61)
 	item := sessionItem{session: claude.SessionInfo{
 		SessionID:  "s1",
 		Project:    "/test",
 		Timestamp:  1000,
 		FirstInput: longInput,
 	}}
+	// Description() now returns the raw string; truncation is done at render time via truncateText
 	desc := item.Description()
-	if !strings.Contains(desc, "...") {
-		t.Errorf("description should contain '...' for long input, got %q", desc)
+	if desc != longInput {
+		t.Errorf("Description() should return raw input, got %q", desc)
 	}
-	// The truncated input should be 57 chars + "..." = 60 chars
-	if strings.Contains(desc, longInput) {
-		t.Errorf("description should not contain full long input, got %q", desc)
+
+	// Verify truncateText handles long strings correctly
+	truncated := truncateText(longInput, 60)
+	if !strings.Contains(truncated, "...") {
+		t.Errorf("truncateText should append '...' for long input, got %q", truncated)
+	}
+	if len(truncated) > 60 {
+		t.Errorf("truncateText result should not exceed maxWidth, got len=%d", len(truncated))
+	}
+}
+
+func TestTruncateText(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxWidth int
+		wantFit  bool // true if result should equal input (fits within maxWidth)
+	}{
+		{"short ASCII", "hello", 10, true},
+		{"exact fit", "hello", 5, true},
+		{"needs truncation", "hello world", 8, false},
+		{"newlines removed", "line1\nline2\nline3", 50, true},
+		{"Japanese full-width", "日本語テスト", 6, false}, // 6 chars = 12 columns, maxWidth=6 triggers truncation
+		{"Japanese fits", "日本語", 10, true},              // 3 chars = 6 columns, fits in 10
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateText(tt.input, tt.maxWidth)
+			if strings.Contains(result, "\n") {
+				t.Errorf("truncateText should not contain newlines, got %q", result)
+			}
+			if tt.wantFit && strings.Contains(result, "...") {
+				t.Errorf("expected no truncation, got %q", result)
+			}
+			if !tt.wantFit && !strings.Contains(result, "...") {
+				t.Errorf("expected truncation with '...', got %q", result)
+			}
+		})
 	}
 }
 

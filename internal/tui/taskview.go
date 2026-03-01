@@ -116,21 +116,39 @@ func (m TaskViewModel) viewTasks() string {
 			prefix = "> "
 		}
 
-		line := fmt.Sprintf("%s%s %s", prefix, icon, task.Subject)
+		if i == m.selected {
+			line := fmt.Sprintf("%s%s %s", prefix, icon, SelectedLabelStyle.Render(task.Subject))
 
-		if len(task.BlockedBy) > 0 {
-			refs := make([]string, len(task.BlockedBy))
-			for j, id := range task.BlockedBy {
-				refs[j] = "#" + id
+			if len(task.BlockedBy) > 0 {
+				refs := make([]string, len(task.BlockedBy))
+				for j, id := range task.BlockedBy {
+					refs[j] = "#" + id
+				}
+				line += SelectedDetailStyle.Render(fmt.Sprintf(" (blocked by %s)", strings.Join(refs, ", ")))
 			}
-			line += DimStyle.Render(fmt.Sprintf(" (blocked by %s)", strings.Join(refs, ", ")))
-		}
 
-		if task.Status == "in_progress" && task.ActiveForm != "" {
-			line += DimStyle.Render(fmt.Sprintf(" — %s", task.ActiveForm))
-		}
+			if task.Status == "in_progress" && task.ActiveForm != "" {
+				line += SelectedDetailStyle.Render(fmt.Sprintf(" — %s", task.ActiveForm))
+			}
 
-		b.WriteString(line + "\n")
+			b.WriteString(line + "\n")
+		} else {
+			line := fmt.Sprintf("%s%s %s", prefix, icon, task.Subject)
+
+			if len(task.BlockedBy) > 0 {
+				refs := make([]string, len(task.BlockedBy))
+				for j, id := range task.BlockedBy {
+					refs[j] = "#" + id
+				}
+				line += DimStyle.Render(fmt.Sprintf(" (blocked by %s)", strings.Join(refs, ", ")))
+			}
+
+			if task.Status == "in_progress" && task.ActiveForm != "" {
+				line += DimStyle.Render(fmt.Sprintf(" — %s", task.ActiveForm))
+			}
+
+			b.WriteString(line + "\n")
+		}
 
 		// Show detail for selected task
 		if i == m.selected && m.showDetail && task.Description != "" {

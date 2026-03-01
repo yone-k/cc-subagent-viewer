@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -27,11 +28,7 @@ func (i sessionItem) Title() string {
 func (i sessionItem) Description() string {
 	var parts []string
 	if i.session.FirstInput != "" {
-		input := i.session.FirstInput
-		if len(input) > 60 {
-			input = input[:57] + "..."
-		}
-		parts = append(parts, input)
+		parts = append(parts, i.session.FirstInput)
 	}
 
 	var indicators []string
@@ -71,6 +68,47 @@ func relativeTime(ts int64) string {
 	}
 }
 
+// sessionDelegate implements list.ItemDelegate with the same cursor style as other views.
+type sessionDelegate struct{}
+
+func (d sessionDelegate) Height() int                               { return 2 }
+func (d sessionDelegate) Spacing() int                              { return 1 }
+func (d sessionDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd   { return nil }
+func (d sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	si, ok := item.(sessionItem)
+	if !ok {
+		return
+	}
+
+	isSelected := index == m.Index()
+
+	prefix := "  "
+	if isSelected {
+		prefix = "> "
+	}
+
+	title := si.Title()
+	desc := si.Description()
+	// 4 = indent for description line ("    ")
+	maxDescWidth := m.Width() - 4
+	if maxDescWidth < 10 {
+		maxDescWidth = 10
+	}
+	desc = truncateText(desc, maxDescWidth)
+
+	if isSelected {
+		fmt.Fprintf(w, "%s%s\n", prefix, SelectedLabelStyle.Render(title))
+		if desc != "" {
+			fmt.Fprintf(w, "    %s", SelectedDetailStyle.Render(desc))
+		}
+	} else {
+		fmt.Fprintf(w, "%s%s\n", prefix, title)
+		if desc != "" {
+			fmt.Fprintf(w, "    %s", DimStyle.Render(desc))
+		}
+	}
+}
+
 // SelectorModel manages the session selection screen.
 type SelectorModel struct {
 	list     list.Model
@@ -86,7 +124,7 @@ func NewSelectorModel(sessions []claude.SessionInfo) SelectorModel {
 		items[i] = sessionItem{session: s}
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), 80, 20)
+	l := list.New(items, sessionDelegate{}, 80, 20)
 	l.Title = "Claude Code Sessions"
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)

@@ -91,7 +91,11 @@ func (m FileViewModel) View() string {
 			arrow = "▼"
 		}
 
-		b.WriteString(fmt.Sprintf("%s%s %s (%d versions)\n", prefix, arrow, group.Hash, len(group.Versions)))
+		if i == m.selected {
+			b.WriteString(fmt.Sprintf("%s%s %s %s\n", prefix, arrow, SelectedLabelStyle.Render(group.Hash), SelectedDetailStyle.Render(fmt.Sprintf("(%d versions)", len(group.Versions)))))
+		} else {
+			b.WriteString(fmt.Sprintf("%s%s %s %s\n", prefix, arrow, group.Hash, DimStyle.Render(fmt.Sprintf("(%d versions)", len(group.Versions)))))
+		}
 
 		if m.expanded[group.Hash] {
 			for _, v := range group.Versions {

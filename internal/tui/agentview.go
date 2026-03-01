@@ -159,18 +159,30 @@ func (m AgentViewModel) viewAgents() string {
 			label = agent.AgentID
 		}
 
-		prompt := agent.Prompt
-		if len([]rune(prompt)) > 60 {
-			prompt = string([]rune(prompt)[:60]) + "..."
+		// 4 = indent for prompt line ("    ")
+		maxPromptWidth := m.width - 4
+		if maxPromptWidth < 10 {
+			maxPromptWidth = 10
 		}
+		prompt := truncateText(agent.Prompt, maxPromptWidth)
 
-		line := fmt.Sprintf("%s%s", prefix, ConversationAssistantStyle.Render(label))
-		if agent.SubagentType != "" {
-			line += DimStyle.Render(fmt.Sprintf(" [%s]", agent.SubagentType))
+		if i == m.agentSelected {
+			line := fmt.Sprintf("%s%s", prefix, SelectedLabelStyle.Render(label))
+			if agent.SubagentType != "" {
+				line += SelectedDetailStyle.Render(fmt.Sprintf(" [%s]", agent.SubagentType))
+			}
+			line += SelectedDetailStyle.Render(fmt.Sprintf("  (%d entries)", agent.EntryCount))
+			b.WriteString(line + "\n")
+			b.WriteString(fmt.Sprintf("    %s\n", SelectedDetailStyle.Render(prompt)))
+		} else {
+			line := fmt.Sprintf("%s%s", prefix, label)
+			if agent.SubagentType != "" {
+				line += DimStyle.Render(fmt.Sprintf(" [%s]", agent.SubagentType))
+			}
+			line += DimStyle.Render(fmt.Sprintf("  (%d entries)", agent.EntryCount))
+			b.WriteString(line + "\n")
+			b.WriteString(fmt.Sprintf("    %s\n", DimStyle.Render(prompt)))
 		}
-		line += HelpStyle.Render(fmt.Sprintf("  (%d entries)", agent.EntryCount))
-		b.WriteString(line + "\n")
-		b.WriteString(fmt.Sprintf("    %s\n", DimStyle.Render(prompt)))
 	}
 
 	return b.String()
