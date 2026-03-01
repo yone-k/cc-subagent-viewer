@@ -247,20 +247,15 @@ func (m LogViewModel) View() string {
 }
 
 func (m LogViewModel) renderFilterBar() string {
-	var parts []string
+	items := make([]FilterItem, len(logFilterDefs))
 	for i, f := range logFilterDefs {
-		label := f.label
-		if i == m.filterCursor {
-			label = "[" + label + "]"
-		}
-		if m.filterLevels[f.level] {
-			parts = append(parts, FilterActiveStyle.Render(label))
-		} else {
-			parts = append(parts, FilterInactiveStyle.Render(label))
+		items[i] = FilterItem{
+			Label:  f.label,
+			Active: m.filterLevels[f.level],
 		}
 	}
 
-	filterBar := "Filter: " + strings.Join(parts, " ")
+	filterBar := RenderFilterBar(items, m.filterCursor)
 
 	if m.searching {
 		filterBar += "  Search: " + m.searchInput.View()

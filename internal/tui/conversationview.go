@@ -226,20 +226,14 @@ func (m ConversationViewModel) renderHeader() string {
 
 // renderConversationFilterBar renders the filter bar for content type filtering.
 func (m ConversationViewModel) renderConversationFilterBar() string {
-	var parts []string
+	items := make([]FilterItem, len(convFilterDefs))
 	for i, f := range convFilterDefs {
-		label := f.label
-		if i == m.filterCursor {
-			label = "[" + label + "]"
-		}
-		if m.filterTypes[f.blockType] {
-			parts = append(parts, FilterActiveStyle.Render(label))
-		} else {
-			parts = append(parts, FilterInactiveStyle.Render(label))
+		items[i] = FilterItem{
+			Label:  f.label,
+			Active: m.filterTypes[f.blockType],
 		}
 	}
-
-	return "Filter: " + strings.Join(parts, " ")
+	return RenderFilterBar(items, m.filterCursor)
 }
 
 // filteredBlocks returns the filtered and rendered blocks for display.

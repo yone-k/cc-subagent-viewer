@@ -198,6 +198,35 @@ func truncateText(s string, maxWidth int) string {
 	return runewidth.Truncate(s, maxWidth, "...")
 }
 
+// FilterItem represents a single filter toggle item for the shared filter bar.
+type FilterItem struct {
+	Label  string
+	Active bool
+}
+
+// RenderFilterBar renders a horizontal filter bar from the given items.
+// The item at cursorIndex is bracketed with [label].
+// Active items use FilterActiveStyle; inactive items use FilterInactiveStyle.
+// Returns "Filter: " prefix followed by space-joined styled labels.
+func RenderFilterBar(items []FilterItem, cursorIndex int) string {
+	if len(items) == 0 {
+		return "Filter: "
+	}
+	parts := make([]string, len(items))
+	for i, item := range items {
+		label := item.Label
+		if i == cursorIndex {
+			label = "[" + label + "]"
+		}
+		if item.Active {
+			parts[i] = FilterActiveStyle.Render(label)
+		} else {
+			parts[i] = FilterInactiveStyle.Render(label)
+		}
+	}
+	return "Filter: " + strings.Join(parts, " ")
+}
+
 // Conversation styles
 var (
 	ConversationUserStyle = lipgloss.NewStyle().

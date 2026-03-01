@@ -25,6 +25,8 @@ type ConversationWatcher struct {
 	infos        map[string]*claude.SubagentInfo
 	parentPath   string // cached parent conversation path (empty until resolved)
 	parentOffset int64
+	parentCache  *claude.AgentDescriptionCache
+	parentMtime  time.Time
 }
 
 // NewConversationWatcher creates a new ConversationWatcher.
@@ -103,9 +105,14 @@ func (cw *ConversationWatcher) resolveParentPath() string {
 func (cw *ConversationWatcher) enrichAndSendAgents(agents []claude.SubagentInfo) {
 	parentPath := cw.resolveParentPath()
 	if parentPath != "" {
-		descriptions, err := claude.ExtractAgentDescriptions(parentPath)
+		result, err := claude.ExtractAgentDescriptionsIncremental(
+			parentPath, cw.parentOffset, cw.parentCache,
+		)
+		cw.parentCache = result.Cache
+		cw.parentOffset = result.Offset
+		cw.parentMtime = result.ModTime
 		if err == nil {
-			claude.EnrichSubagentsWithDescriptions(agents, descriptions)
+			claude.EnrichSubagentsWithDescriptions(agents, cw.parentCache.Descriptions)
 			// Only default unset status to Running when enrichment succeeded;
 			// if the parent file could not be read, status remains empty (unknown).
 			for i := range agents {
@@ -114,15 +121,23 @@ func (cw *ConversationWatcher) enrichAndSendAgents(agents []claude.SubagentInfo)
 				}
 			}
 		}
-		if info, statErr := os.Stat(parentPath); statErr == nil {
-			cw.parentOffset = info.Size()
-		}
 	}
 	// Sort descending (newest first) for display
 	sort.Slice(agents, func(i, j int) bool {
 		return agents[i].CreatedAt.After(agents[j].CreatedAt)
 	})
 	cw.program.Send(SubagentsDiscoveredMsg{Agents: agents})
+}
+
+// buildAgentsList constructs a []SubagentInfo from the cached cw.infos map.
+func (cw *ConversationWatcher) buildAgentsList() []claude.SubagentInfo {
+	agents := make([]claude.SubagentInfo, 0, len(cw.infos))
+	for _, info := range cw.infos {
+		if info != nil {
+			agents = append(agents, *info)
+		}
+	}
+	return agents
 }
 
 // scan does the initial full scan of all agent files.
@@ -133,38 +148,38 @@ func (cw *ConversationWatcher) scan() {
 		return
 	}
 
-	agents, err := claude.DiscoverSubagents(cw.dir)
+	files, err := claude.DiscoverSubagentFiles(cw.dir)
 	if err != nil {
 		cw.program.Send(SubagentsDiscoveredMsg{})
 		return
 	}
 
-	cw.enrichAndSendAgents(agents)
-
-	// Load all conversations and track offsets
-	for _, agent := range agents {
-		entries, info, err := claude.ParseConversationFile(agent.FilePath)
+	// Parse each file once
+	for _, f := range files {
+		entries, info, err := claude.ParseConversationFile(f.Path)
 		if err != nil {
 			continue
 		}
 
-		// Track file offset (file size)
-		fi, err := os.Stat(agent.FilePath)
-		if err == nil {
-			cw.offsets[agent.FilePath] = fi.Size()
+		cw.offsets[f.Path] = f.Size
+		cw.entries[f.Path] = entries
+		if info != nil {
+			info.CreatedAt = f.CreatedAt // Propagate CreatedAt from file stat
+			cw.infos[f.Path] = info
 		}
 
-		cw.entries[agent.FilePath] = entries
-		cw.infos[agent.FilePath] = info
-
-		if len(entries) > 0 {
+		if len(entries) > 0 && info != nil {
 			cw.program.Send(ConversationUpdatedMsg{
-				AgentID: agent.AgentID,
+				AgentID: info.AgentID,
 				Entries: entries,
 				Info:    info,
 			})
 		}
 	}
+
+	// Build agents list from cache and enrich
+	agents := cw.buildAgentsList()
+	cw.enrichAndSendAgents(agents)
 }
 
 // poll checks for new files and new entries in existing files.
@@ -177,35 +192,41 @@ func (cw *ConversationWatcher) poll() {
 	parentChanged := false
 	if parentPath := cw.resolveParentPath(); parentPath != "" {
 		if info, err := os.Stat(parentPath); err == nil {
-			if info.Size() != cw.parentOffset {
+			sizeChanged := info.Size() != cw.parentOffset
+			mtimeChanged := !info.ModTime().Equal(cw.parentMtime)
+			if sizeChanged || mtimeChanged {
 				parentChanged = true
+				// Same size but different mtime means file was replaced (e.g. /compact)
+				if !sizeChanged && mtimeChanged {
+					cw.parentOffset = 0
+					cw.parentCache = nil
+				}
 			}
 		}
 	}
 
-	// Check for new agent files
-	matches, err := filepath.Glob(filepath.Join(cw.dir, "agent-*.jsonl"))
+	// Check for new agent files (use DiscoverSubagentFiles to consistently filter compact files)
+	discoveredFiles, err := claude.DiscoverSubagentFiles(cw.dir)
 	if err != nil {
 		return
 	}
 
 	newFileFound := false
-	for _, path := range matches {
-		if _, exists := cw.offsets[path]; !exists {
+	for _, df := range discoveredFiles {
+		if _, exists := cw.offsets[df.Path]; !exists {
 			// New file found
 			newFileFound = true
-			entries, info, err := claude.ParseConversationFile(path)
+			entries, info, err := claude.ParseConversationFile(df.Path)
 			if err != nil {
 				continue
 			}
 
-			fi, err := os.Stat(path)
-			if err == nil {
-				cw.offsets[path] = fi.Size()
+			cw.offsets[df.Path] = df.Size
+			cw.entries[df.Path] = entries
+			if info != nil {
+				info.CreatedAt = df.CreatedAt
+				cw.infos[df.Path] = info
 			}
-
-			cw.entries[path] = entries
-			cw.infos[path] = info
 
 			if info != nil && len(entries) > 0 {
 				cw.program.Send(ConversationUpdatedMsg{
@@ -219,10 +240,8 @@ func (cw *ConversationWatcher) poll() {
 
 	// Send updated agents list if parent changed or new files were found
 	if parentChanged || newFileFound {
-		agents, err := claude.DiscoverSubagents(cw.dir)
-		if err == nil {
-			cw.enrichAndSendAgents(agents)
-		}
+		agents := cw.buildAgentsList()
+		cw.enrichAndSendAgents(agents)
 	}
 
 	// Check existing files for new content

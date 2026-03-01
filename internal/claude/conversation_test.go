@@ -369,6 +369,333 @@ func TestEnrichSubagentsWithDescriptions_DuplicatePrompt(t *testing.T) {
 	}
 }
 
+func TestDiscoverSubagentFiles(t *testing.T) {
+	t.Run("returns paths and ModTime from testdata", func(t *testing.T) {
+		dir := filepath.Join("testdata", "subagents")
+		files, err := DiscoverSubagentFiles(dir)
+		if err != nil {
+			t.Fatalf("DiscoverSubagentFiles() error = %v", err)
+		}
+
+		if len(files) != 2 {
+			t.Fatalf("got %d files, want 2", len(files))
+		}
+
+		// Verify each file has a non-empty Path and non-zero CreatedAt
+		for i, f := range files {
+			if f.Path == "" {
+				t.Errorf("files[%d].Path is empty", i)
+			}
+			if f.CreatedAt.IsZero() {
+				t.Errorf("files[%d].CreatedAt is zero", i)
+			}
+		}
+	})
+
+	t.Run("excludes compact files", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// Create a normal agent file
+		normalContent := []byte(`{"type":"user","message":{"content":"hello"}}` + "\n")
+		if err := os.WriteFile(filepath.Join(dir, "agent-normal.jsonl"), normalContent, 0644); err != nil {
+			t.Fatal(err)
+		}
+		// Create a compact file (should be excluded)
+		if err := os.WriteFile(filepath.Join(dir, "agent-compact-abc.jsonl"), normalContent, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		files, err := DiscoverSubagentFiles(dir)
+		if err != nil {
+			t.Fatalf("DiscoverSubagentFiles() error = %v", err)
+		}
+
+		if len(files) != 1 {
+			t.Fatalf("got %d files, want 1 (compact should be excluded)", len(files))
+		}
+		if !strings.Contains(files[0].Path, "agent-normal.jsonl") {
+			t.Errorf("expected agent-normal.jsonl, got %s", files[0].Path)
+		}
+	})
+
+	t.Run("sorted by CreatedAt descending", func(t *testing.T) {
+		dir := t.TempDir()
+
+		baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		testFiles := []struct {
+			name    string
+			modTime time.Time
+		}{
+			{"agent-old.jsonl", baseTime},
+			{"agent-mid.jsonl", baseTime.Add(1 * time.Hour)},
+			{"agent-new.jsonl", baseTime.Add(2 * time.Hour)},
+		}
+
+		content := []byte(`{"type":"user","message":{"content":"task"}}` + "\n")
+		for _, f := range testFiles {
+			path := filepath.Join(dir, f.name)
+			if err := os.WriteFile(path, content, 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(path, f.modTime, f.modTime); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		files, err := DiscoverSubagentFiles(dir)
+		if err != nil {
+			t.Fatalf("DiscoverSubagentFiles() error = %v", err)
+		}
+
+		if len(files) != 3 {
+			t.Fatalf("got %d files, want 3", len(files))
+		}
+
+		// Expect newest first
+		wantOrder := []string{"agent-new.jsonl", "agent-mid.jsonl", "agent-old.jsonl"}
+		for i, want := range wantOrder {
+			got := filepath.Base(files[i].Path)
+			if got != want {
+				t.Errorf("files[%d] = %q, want %q", i, got, want)
+			}
+		}
+
+		// Verify CreatedAt is actually descending
+		for i := 1; i < len(files); i++ {
+			if files[i].CreatedAt.After(files[i-1].CreatedAt) {
+				t.Errorf("files[%d].CreatedAt (%v) is after files[%d].CreatedAt (%v)",
+					i, files[i].CreatedAt, i-1, files[i-1].CreatedAt)
+			}
+		}
+	})
+}
+
+func TestExtractAgentDescriptionsIncremental(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "conversation.jsonl")
+
+	// Phase 1: Initial read with offset=0, cache=nil
+	// Write an assistant line with Agent tool_use
+	line1 := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_inc_1","name":"Agent","input":{"description":"Explore repo","prompt":"Analyze the project","subagent_type":"Explore"}}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := ExtractAgentDescriptionsIncremental(path, 0, nil)
+	if err != nil {
+		t.Fatalf("Phase 1: error = %v", err)
+	}
+	cache := r.Cache
+	offset := r.Offset
+	if len(cache.Descriptions) != 1 {
+		t.Fatalf("Phase 1: got %d descriptions, want 1", len(cache.Descriptions))
+	}
+	if cache.Descriptions[0].Description != "Explore repo" {
+		t.Errorf("Phase 1: Description = %q, want %q", cache.Descriptions[0].Description, "Explore repo")
+	}
+	if cache.Descriptions[0].Status != SubagentRunning {
+		t.Errorf("Phase 1: Status = %q, want %q", cache.Descriptions[0].Status, SubagentRunning)
+	}
+	if offset != int64(len(line1)) {
+		t.Errorf("Phase 1: offset = %d, want %d", offset, len(line1))
+	}
+
+	// Phase 2: Append tool_result, read incrementally
+	line2 := `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool_inc_1","content":"Done"}]}}` + "\n"
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(line2); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	r, err = ExtractAgentDescriptionsIncremental(path, offset, cache)
+	if err != nil {
+		t.Fatalf("Phase 2: error = %v", err)
+	}
+	cache = r.Cache
+	offset = r.Offset
+	if len(cache.Descriptions) != 1 {
+		t.Fatalf("Phase 2: got %d descriptions, want 1", len(cache.Descriptions))
+	}
+	if cache.Descriptions[0].Status != SubagentClosed {
+		t.Errorf("Phase 2: Status = %q, want %q (should be closed after tool_result)", cache.Descriptions[0].Status, SubagentClosed)
+	}
+	if offset != int64(len(line1)+len(line2)) {
+		t.Errorf("Phase 2: offset = %d, want %d", offset, len(line1)+len(line2))
+	}
+
+	// Phase 3: Append new Agent tool_use, read incrementally
+	line3 := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_inc_2","name":"Agent","input":{"description":"Implement feature","prompt":"Add the new feature","subagent_type":"general-task-executor"}}]}}` + "\n"
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(line3); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	r, err = ExtractAgentDescriptionsIncremental(path, offset, cache)
+	if err != nil {
+		t.Fatalf("Phase 3: error = %v", err)
+	}
+	cache = r.Cache
+	offset = r.Offset
+	if len(cache.Descriptions) != 2 {
+		t.Fatalf("Phase 3: got %d descriptions, want 2", len(cache.Descriptions))
+	}
+	if cache.Descriptions[1].Description != "Implement feature" {
+		t.Errorf("Phase 3: Descriptions[1].Description = %q, want %q", cache.Descriptions[1].Description, "Implement feature")
+	}
+	if cache.Descriptions[1].Status != SubagentRunning {
+		t.Errorf("Phase 3: Descriptions[1].Status = %q, want %q", cache.Descriptions[1].Status, SubagentRunning)
+	}
+	if offset != int64(len(line1)+len(line2)+len(line3)) {
+		t.Errorf("Phase 3: offset = %d, want %d", offset, len(line1)+len(line2)+len(line3))
+	}
+}
+
+func TestExtractAgentDescriptionsIncremental_NilCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "conversation.jsonl")
+
+	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_nil","name":"Agent","input":{"description":"Task A","prompt":"Do task A","subagent_type":"Explore"}}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := ExtractAgentDescriptionsIncremental(path, 0, nil)
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if r.Cache == nil {
+		t.Fatal("cache should not be nil after call with nil cache")
+	}
+	if r.Cache.completedIDs == nil {
+		t.Error("cache.completedIDs should be initialized")
+	}
+	if r.Cache.backgroundIDs == nil {
+		t.Error("cache.backgroundIDs should be initialized")
+	}
+	if len(r.Cache.Descriptions) != 1 {
+		t.Fatalf("got %d descriptions, want 1", len(r.Cache.Descriptions))
+	}
+	if r.Offset != int64(len(line)) {
+		t.Errorf("offset = %d, want %d", r.Offset, len(line))
+	}
+}
+
+func TestExtractAgentDescriptionsIncremental_Truncate(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "conversation.jsonl")
+
+	// Write initial content (2 lines)
+	line1 := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_trunc_1","name":"Agent","input":{"description":"Old task","prompt":"Old prompt","subagent_type":"Explore"}}]}}` + "\n"
+	line2 := `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool_trunc_1","content":"Done"}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(line1+line2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First read
+	r, err := ExtractAgentDescriptionsIncremental(path, 0, nil)
+	if err != nil {
+		t.Fatalf("Phase 1: error = %v", err)
+	}
+	cache := r.Cache
+	offset := r.Offset
+	if len(cache.Descriptions) != 1 {
+		t.Fatalf("Phase 1: got %d descriptions, want 1", len(cache.Descriptions))
+	}
+	if cache.Descriptions[0].Status != SubagentClosed {
+		t.Errorf("Phase 1: Status = %q, want %q", cache.Descriptions[0].Status, SubagentClosed)
+	}
+
+	// Truncate: write shorter content (simulating file truncation/rewrite)
+	newLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_trunc_2","name":"Agent","input":{"description":"New task","prompt":"New prompt","subagent_type":"general-task-executor"}}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(newLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read with old offset (larger than new file size) — should reset and re-parse
+	r, err = ExtractAgentDescriptionsIncremental(path, offset, cache)
+	if err != nil {
+		t.Fatalf("Phase 2: error = %v", err)
+	}
+	cache = r.Cache
+	offset = r.Offset
+	// Cache should be reset: only new content
+	if len(cache.Descriptions) != 1 {
+		t.Fatalf("Phase 2: got %d descriptions, want 1 (cache should be reset)", len(cache.Descriptions))
+	}
+	if cache.Descriptions[0].Description != "New task" {
+		t.Errorf("Phase 2: Description = %q, want %q", cache.Descriptions[0].Description, "New task")
+	}
+	if cache.Descriptions[0].ToolUseID != "tool_trunc_2" {
+		t.Errorf("Phase 2: ToolUseID = %q, want %q", cache.Descriptions[0].ToolUseID, "tool_trunc_2")
+	}
+	if offset != int64(len(newLine)) {
+		t.Errorf("Phase 2: offset = %d, want %d", offset, len(newLine))
+	}
+}
+
+func TestExtractAgentDescriptionsIncremental_IncompleteLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "conversation.jsonl")
+
+	// Write a complete line followed by an incomplete line (no newline at end)
+	completeLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_complete","name":"Agent","input":{"description":"Complete task","prompt":"Do complete task","subagent_type":"Explore"}}]}}` + "\n"
+	incompleteLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_incomplete","name":"Agent","input":{"description":"Incomplete task","prompt":"Do incomplete` // truncated, no closing
+	if err := os.WriteFile(path, []byte(completeLine+incompleteLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First read: should parse the complete line, skip the incomplete one
+	r, err := ExtractAgentDescriptionsIncremental(path, 0, nil)
+	if err != nil {
+		t.Fatalf("Phase 1: error = %v", err)
+	}
+	cache := r.Cache
+	offset := r.Offset
+	if len(cache.Descriptions) != 1 {
+		t.Fatalf("Phase 1: got %d descriptions, want 1", len(cache.Descriptions))
+	}
+	if cache.Descriptions[0].Description != "Complete task" {
+		t.Errorf("Phase 1: Description = %q, want %q", cache.Descriptions[0].Description, "Complete task")
+	}
+	// Offset should only include the complete line's bytes
+	if offset != int64(len(completeLine)) {
+		t.Errorf("Phase 1: offset = %d, want %d (should not include incomplete line)", offset, len(completeLine))
+	}
+
+	// Now complete the incomplete line by rewriting the file
+	completedSecondLine := `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool_incomplete","name":"Agent","input":{"description":"Incomplete task","prompt":"Do incomplete task fully","subagent_type":"general-task-executor"}}]}}` + "\n"
+	if err := os.WriteFile(path, []byte(completeLine+completedSecondLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second read: should parse the now-complete second line
+	r, err = ExtractAgentDescriptionsIncremental(path, offset, cache)
+	if err != nil {
+		t.Fatalf("Phase 2: error = %v", err)
+	}
+	cache = r.Cache
+	offset = r.Offset
+	if len(cache.Descriptions) != 2 {
+		t.Fatalf("Phase 2: got %d descriptions, want 2", len(cache.Descriptions))
+	}
+	if cache.Descriptions[1].Description != "Incomplete task" {
+		t.Errorf("Phase 2: Descriptions[1].Description = %q, want %q", cache.Descriptions[1].Description, "Incomplete task")
+	}
+	if offset != int64(len(completeLine)+len(completedSecondLine)) {
+		t.Errorf("Phase 2: offset = %d, want %d", offset, len(completeLine)+len(completedSecondLine))
+	}
+}
+
 func TestDiscoverSubagents(t *testing.T) {
 	dir := filepath.Join("testdata", "subagents")
 	agents, err := DiscoverSubagents(dir)

@@ -273,28 +273,89 @@ func isAsyncLaunchResult(content json.RawMessage) bool {
 // tool_result entry exists. Background agents (run_in_background=true) are always
 // treated as running since their immediate tool_result is just a launch confirmation.
 func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
+	result, err := ExtractAgentDescriptionsIncremental(parentPath, 0, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Cache.Descriptions, nil
+}
+
+// AgentDescriptionCache holds accumulated state for incremental parsing.
+// Callers should only read Descriptions; the other fields are internal bookkeeping.
+type AgentDescriptionCache struct {
+	Descriptions  []AgentDescription
+	completedIDs  map[string]bool
+	backgroundIDs map[string]bool
+}
+
+// IncrementalParseResult holds the return values from ExtractAgentDescriptionsIncremental.
+type IncrementalParseResult struct {
+	Cache   *AgentDescriptionCache
+	Offset  int64
+	ModTime time.Time // file modification time at the time of parsing
+}
+
+// ExtractAgentDescriptionsIncremental extracts agent descriptions incrementally
+// starting from the given offset. Returns updated cache, new offset, file mod time, and error.
+func ExtractAgentDescriptionsIncremental(parentPath string, offset int64, cache *AgentDescriptionCache) (IncrementalParseResult, error) {
 	f, err := os.Open(parentPath)
 	if err != nil {
-		return nil, fmt.Errorf("opening parent conversation: %w", err)
+		return IncrementalParseResult{Cache: cache, Offset: offset}, fmt.Errorf("opening parent conversation: %w", err)
 	}
 	defer f.Close()
 
-	var result []AgentDescription
-	completedIDs := make(map[string]bool)
-	backgroundIDs := make(map[string]bool) // tool_use IDs launched with run_in_background
+	// Get file info (size and mtime in a single stat)
+	fi, err := f.Stat()
+	if err != nil {
+		return IncrementalParseResult{Cache: cache, Offset: offset}, fmt.Errorf("stat parent conversation: %w", err)
+	}
+	fileSize := fi.Size()
+	fileMtime := fi.ModTime()
 
+	// Truncate detection: if file shrank, reset and re-parse from beginning
+	if fileSize < offset {
+		cache = nil
+		offset = 0
+	}
+
+	// Seek to offset if resuming
+	if offset > 0 {
+		if _, err := f.Seek(offset, 0); err != nil {
+			return IncrementalParseResult{Cache: cache, Offset: offset, ModTime: fileMtime}, fmt.Errorf("seeking parent conversation: %w", err)
+		}
+	}
+
+	// Initialize cache if nil
+	if cache == nil {
+		cache = &AgentDescriptionCache{
+			completedIDs:  make(map[string]bool),
+			backgroundIDs: make(map[string]bool),
+		}
+	}
+
+	// Scan lines from current position
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+
+	var parsedBytes int64
 	for scanner.Scan() {
-		line := scanner.Text()
+		lineBytes := scanner.Bytes()
+		line := string(lineBytes)
 		if line == "" {
+			// Empty lines still consume bytes (just the newline)
+			parsedBytes += int64(len(lineBytes)) + 1
 			continue
 		}
 
 		var rl rawLine
 		if err := json.Unmarshal([]byte(line), &rl); err != nil {
+			// JSON parse failed — do NOT count these bytes
+			// so next call re-reads from this line's start
 			continue
 		}
+
+		// Successfully parsed line — count its bytes
+		parsedBytes += int64(len(lineBytes)) + 1
 
 		var msg rawMessage
 		if err := json.Unmarshal(rl.Message, &msg); err != nil {
@@ -308,7 +369,6 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 
 		switch rl.Type {
 		case "assistant":
-			// Extract Agent tool_use blocks
 			for _, rb := range rawBlocks {
 				if rb.Type != "tool_use" || rb.Name != "Agent" {
 					continue
@@ -324,9 +384,9 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 					continue
 				}
 				if input.RunInBackground {
-					backgroundIDs[rb.ID] = true
+					cache.backgroundIDs[rb.ID] = true
 				}
-				result = append(result, AgentDescription{
+				cache.Descriptions = append(cache.Descriptions, AgentDescription{
 					Prompt:       input.Prompt,
 					Description:  input.Description,
 					SubagentType: input.SubagentType,
@@ -334,38 +394,45 @@ func ExtractAgentDescriptions(parentPath string) ([]AgentDescription, error) {
 				})
 			}
 		case "user":
-			// Track completed tool_result entries
 			for _, rb := range rawBlocks {
 				if rb.Type != "tool_result" || rb.ToolUseID == "" {
 					continue
 				}
-				// Skip background agents: their immediate tool_result is
-				// just a launch confirmation, not a completion signal.
-				if backgroundIDs[rb.ToolUseID] {
+				if cache.backgroundIDs[rb.ToolUseID] {
 					continue
 				}
-				// Fallback: also check tool_result content for async launch pattern
 				if isAsyncLaunchResult(rb.Content) {
 					continue
 				}
-				completedIDs[rb.ToolUseID] = true
+				cache.completedIDs[rb.ToolUseID] = true
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading parent conversation: %w", err)
+		return IncrementalParseResult{Cache: cache, Offset: offset, ModTime: fileMtime}, fmt.Errorf("reading parent conversation: %w", err)
 	}
 
-	// Determine status for each agent description
-	for i := range result {
-		if completedIDs[result[i].ToolUseID] {
-			result[i].Status = SubagentClosed
+	// Clamp offset to file size: Scanner strips the trailing newline from each
+	// token, so our "+1" per line may overshoot by 1 byte when the last scanned
+	// line has no trailing newline (e.g. partial write in progress).
+	newOffset := offset + parsedBytes
+	if newOffset > fileSize {
+		newOffset = fileSize
+	}
+	if parsedBytes == 0 {
+		return IncrementalParseResult{Cache: cache, Offset: newOffset, ModTime: fileMtime}, nil
+	}
+
+	// Re-determine status for ALL descriptions based on current completedIDs
+	for i := range cache.Descriptions {
+		if cache.completedIDs[cache.Descriptions[i].ToolUseID] {
+			cache.Descriptions[i].Status = SubagentClosed
 		} else {
-			result[i].Status = SubagentRunning
+			cache.Descriptions[i].Status = SubagentRunning
 		}
 	}
 
-	return result, nil
+	return IncrementalParseResult{Cache: cache, Offset: newOffset, ModTime: fileMtime}, nil
 }
 
 // EnrichSubagentsWithDescriptions matches subagents with descriptions extracted
@@ -426,15 +493,22 @@ func EnrichSubagentsWithDescriptions(agents []SubagentInfo, descriptions []Agent
 	}
 }
 
-// DiscoverSubagents scans a directory for agent-*.jsonl files and returns info about each.
-// Results are sorted by file modification time descending (newest first).
-func DiscoverSubagents(subagentsDir string) ([]SubagentInfo, error) {
+// SubagentFile represents a discovered subagent conversation file without parsing its content.
+type SubagentFile struct {
+	Path      string
+	CreatedAt time.Time // file modification time (used as creation time proxy)
+	Size      int64
+}
+
+// DiscoverSubagentFiles discovers subagent conversation files in the given directory
+// using only glob + stat (no content parsing). Files are returned sorted by CreatedAt descending.
+func DiscoverSubagentFiles(subagentsDir string) ([]SubagentFile, error) {
 	matches, err := filepath.Glob(filepath.Join(subagentsDir, "agent-*.jsonl"))
 	if err != nil {
 		return nil, fmt.Errorf("globbing subagent files: %w", err)
 	}
 
-	var agents []SubagentInfo
+	var files []SubagentFile
 	for _, path := range matches {
 		// Skip internal compact agents created by /compact command
 		base := filepath.Base(path)
@@ -442,23 +516,42 @@ func DiscoverSubagents(subagentsDir string) ([]SubagentInfo, error) {
 			continue
 		}
 
-		_, info, err := ParseConversationFile(path)
+		fi, err := os.Stat(path)
 		if err != nil {
-			continue // skip broken files
+			continue // skip files we cannot stat
 		}
-		if info != nil {
-			fi, err := os.Stat(path)
-			if err == nil {
-				info.CreatedAt = fi.ModTime()
-			}
-			agents = append(agents, *info)
-		}
+
+		files = append(files, SubagentFile{
+			Path:      path,
+			CreatedAt: fi.ModTime(),
+			Size:      fi.Size(),
+		})
 	}
 
 	// Sort by CreatedAt descending (newest first)
-	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].CreatedAt.After(agents[j].CreatedAt)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].CreatedAt.After(files[j].CreatedAt)
 	})
 
-	return agents, nil
+	return files, nil
+}
+
+// DiscoverSubagents scans a directory for agent-*.jsonl files and returns info about each.
+// Results are sorted by file modification time descending (newest first).
+func DiscoverSubagents(subagentsDir string) ([]SubagentInfo, error) {
+	files, err := DiscoverSubagentFiles(subagentsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var agents []SubagentInfo
+	for _, f := range files {
+		_, info, err := ParseConversationFile(f.Path)
+		if err != nil || info == nil {
+			continue
+		}
+		info.CreatedAt = f.CreatedAt
+		agents = append(agents, *info)
+	}
+	return agents, nil // already sorted by DiscoverSubagentFiles
 }
