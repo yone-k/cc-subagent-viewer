@@ -1,0 +1,131 @@
+package tui
+
+import "github.com/charmbracelet/lipgloss"
+
+// Color palette - centralized color definitions for consistent theming.
+// Light and Dark values are intentionally the same for accent colors
+// to ensure visibility on both light and dark terminals.
+var (
+	colorPrimary = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	colorSuccess = lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}
+	colorWarning = lipgloss.AdaptiveColor{Light: "#DBBD30", Dark: "#DBBD30"}
+	colorMuted   = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#626262"}
+	colorDanger  = lipgloss.AdaptiveColor{Light: "#CC3333", Dark: "#882222"}
+	colorCyan    = lipgloss.AdaptiveColor{Light: "#00AAAA", Dark: "#00CCCC"}
+	colorMagenta = lipgloss.AdaptiveColor{Light: "#AA00AA", Dark: "#CC00CC"}
+	colorBlue    = lipgloss.AdaptiveColor{Light: "#3333CC", Dark: "#5555FF"}
+)
+
+// Tab styles
+var (
+	ActiveTabStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorPrimary).
+		Border(lipgloss.NormalBorder(), false, false, true, false).
+		BorderForeground(colorPrimary).
+		Padding(0, 2)
+
+	InactiveTabStyle = lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Padding(0, 2)
+
+	TabGapStyle = lipgloss.NewStyle().
+		Padding(0, 1)
+)
+
+// Status icon styles
+var (
+	StatusCompleted = lipgloss.NewStyle().
+		Foreground(colorSuccess).
+		SetString("✓")
+
+	StatusInProgress = lipgloss.NewStyle().
+		Foreground(colorWarning).
+		SetString("●")
+
+	StatusPending = lipgloss.NewStyle().
+		Foreground(colorMuted).
+		SetString("○")
+
+	StatusBlocked = lipgloss.NewStyle().
+		Foreground(colorDanger).
+		SetString("✗")
+)
+
+// Log level styles
+var (
+	LogLevelDEBUG = lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	LogLevelERROR = lipgloss.NewStyle().
+		Foreground(colorDanger).
+		Bold(true)
+
+	LogLevelWARN = lipgloss.NewStyle().
+		Foreground(colorWarning)
+
+	LogLevelMCP = lipgloss.NewStyle().
+		Foreground(colorCyan)
+
+	LogLevelSTARTUP = lipgloss.NewStyle().
+		Foreground(colorSuccess)
+
+	LogLevelMETA = lipgloss.NewStyle().
+		Foreground(colorMagenta)
+
+	LogLevelATTACHMENT = lipgloss.NewStyle().
+		Foreground(colorBlue)
+)
+
+// General UI styles
+var (
+	TitleStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorPrimary).
+		Padding(0, 1)
+
+	BorderStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Padding(0, 1)
+
+	HelpStyle = lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	EmptyStateStyle = lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Italic(true).
+		Padding(2, 4)
+
+	WarningStyle = lipgloss.NewStyle().
+		Foreground(colorWarning).
+		Bold(true)
+
+	ActiveSessionStyle = lipgloss.NewStyle().
+		Foreground(colorSuccess).
+		Bold(true)
+
+	FilterActiveStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorSuccess)
+
+	FilterInactiveStyle = lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	ProgressBarFilled = lipgloss.NewStyle().
+		Foreground(colorSuccess)
+
+	ProgressBarEmpty = lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	DimStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"})
+
+	StatsLabelStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"}).
+		Width(20)
+
+	StatsValueStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#DDDDDD"}).
+		Bold(true)
+)

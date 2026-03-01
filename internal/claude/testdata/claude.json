@@ -1,0 +1,40 @@
+{
+  "projects": {
+    "/test/project": {
+      "lastSessionId": "7ba50137-65c8-4349-b420-cdce14c38d2a",
+      "lastCost": 1.178,
+      "lastDuration": 1212000,
+      "lastTotalInputTokens": 150000,
+      "lastTotalOutputTokens": 25000,
+      "lastModelUsage": {
+        "claude-sonnet-4-20250514": {
+          "inputTokens": 120000,
+          "outputTokens": 20000,
+          "cacheCreationInputTokens": 50000,
+          "cacheReadInputTokens": 80000
+        },
+        "claude-haiku-4-20250414": {
+          "inputTokens": 30000,
+          "outputTokens": 5000,
+          "cacheCreationInputTokens": 10000,
+          "cacheReadInputTokens": 20000
+        }
+      }
+    },
+    "/test/another-project": {
+      "lastSessionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "lastCost": 0.523,
+      "lastDuration": 600000,
+      "lastTotalInputTokens": 80000,
+      "lastTotalOutputTokens": 12000,
+      "lastModelUsage": {
+        "claude-sonnet-4-20250514": {
+          "inputTokens": 80000,
+          "outputTokens": 12000,
+          "cacheCreationInputTokens": 30000,
+          "cacheReadInputTokens": 50000
+        }
+      }
+    }
+  }
+}
