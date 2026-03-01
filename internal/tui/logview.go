@@ -238,7 +238,9 @@ func (m LogViewModel) View() string {
 		levelStyle := logLevelStyle(entry.Level)
 		ts := entry.Timestamp.Format("15:04:05.000")
 		levelStr := levelStyle.Render(fmt.Sprintf("[%s]", entry.Level))
-		b.WriteString(fmt.Sprintf("%s %s %s\n", DimStyle.Render(ts), levelStr, entry.Message))
+		// Flatten multi-line messages (continuation lines) to prevent exceeding view height
+		msg := strings.ReplaceAll(entry.Message, "\n", " ")
+		b.WriteString(fmt.Sprintf("%s %s %s\n", DimStyle.Render(ts), levelStr, msg))
 	}
 
 	b.WriteString(HelpStyle.Render(fmt.Sprintf("\n%d entries", len(filtered))))
