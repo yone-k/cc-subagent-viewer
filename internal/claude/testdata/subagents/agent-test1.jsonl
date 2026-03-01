@@ -1,0 +1,4 @@
+{"type":"user","message":{"content":"Implement the feature"},"isSidechain":true,"agentId":"abc123","slug":"implement-feature","sessionId":"sess-001"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"I'll implement this feature."},{"type":"tool_use","id":"tool1","name":"Read","input":{"path":"/tmp/test.go"}}]},"isSidechain":true,"agentId":"abc123","slug":"implement-feature","sessionId":"sess-001"}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool1","content":"package main"}]},"isSidechain":true,"agentId":"abc123","slug":"implement-feature","sessionId":"sess-001"}
+{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me think about this..."},{"type":"text","text":"Here is the implementation."}]},"isSidechain":true,"agentId":"abc123","slug":"implement-feature","sessionId":"sess-001"}

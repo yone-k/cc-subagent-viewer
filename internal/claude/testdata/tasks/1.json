@@ -1,0 +1,9 @@
+{
+  "id": "1",
+  "subject": "プロジェクト分析",
+  "description": "プロジェクトのコードベースを分析し、テスト・リント設定を確認する",
+  "activeForm": "分析中",
+  "status": "completed",
+  "blocks": ["2", "3"],
+  "blockedBy": []
+}

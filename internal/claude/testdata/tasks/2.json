@@ -1,0 +1,9 @@
+{
+  "id": "2",
+  "subject": "テスト実行",
+  "description": "ユニットテストを実行し、カバレッジレポートを生成する",
+  "activeForm": "テスト実行中",
+  "status": "in_progress",
+  "blocks": ["4"],
+  "blockedBy": ["1"]
+}
