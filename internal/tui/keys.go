@@ -63,7 +63,7 @@ var LogKeys = LogKeyMap{
 		key.WithHelp("shift+→", "フィルタ右"),
 	),
 	FilterToggle: key.NewBinding(
-		key.WithKeys("enter"),
+		key.WithKeys("enter", "shift+enter"),
 		key.WithHelp("enter", "フィルタ切替"),
 	),
 	Search: key.NewBinding(
@@ -94,7 +94,7 @@ var ConversationKeys = ConversationKeyMap{
 		key.WithHelp("shift+→", "フィルタ右"),
 	),
 	FilterToggle: key.NewBinding(
-		key.WithKeys("enter"),
+		key.WithKeys("enter", "shift+enter"),
 		key.WithHelp("enter", "フィルタ切替"),
 	),
 	Escape: key.NewBinding(
