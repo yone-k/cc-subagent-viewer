@@ -52,6 +52,7 @@ func ParseLogLine(line string) (LogEntry, error) {
 	if err != nil {
 		return LogEntry{}, fmt.Errorf("invalid timestamp %q: %w", matches[1], err)
 	}
+	ts = ts.Local()
 
 	return LogEntry{
 		Timestamp: ts,

@@ -226,6 +226,23 @@ func TestReadLogTail_SeekChunkBoundary(t *testing.T) {
 	}
 }
 
+func TestParseLogLine_TimestampLocalTimezone(t *testing.T) {
+	line := "2026-03-01T00:39:12.103Z [DEBUG] test message"
+	entry, err := ParseLogLine(line)
+	if err != nil {
+		t.Fatalf("ParseLogLine() error = %v", err)
+	}
+
+	if entry.Timestamp.Location() != time.Local {
+		t.Errorf("Timestamp.Location() = %v, want %v (time.Local)", entry.Timestamp.Location(), time.Local)
+	}
+
+	expectedUTC := time.Date(2026, 3, 1, 0, 39, 12, 103000000, time.UTC)
+	if !entry.Timestamp.Equal(expectedUTC) {
+		t.Errorf("Timestamp instant = %v, want equal to %v", entry.Timestamp, expectedUTC)
+	}
+}
+
 func TestParseLogLine_UnknownLevel(t *testing.T) {
 	// Unknown levels like "INFO" should still parse successfully.
 	line := "2026-03-01T12:00:00.000Z [INFO] an informational message"
