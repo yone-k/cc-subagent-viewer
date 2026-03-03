@@ -55,6 +55,15 @@ func (m AgentViewModel) viewHeight() int {
 	return h
 }
 
+// listPageSize returns the number of agents per page scroll (1 agent = 3 lines).
+func (m AgentViewModel) listPageSize() int {
+	ps := m.viewHeight() / 3
+	if ps < 1 {
+		ps = 1
+	}
+	return ps
+}
+
 // clampScroll adjusts scrollOffset so the selected agent is always visible.
 func (m AgentViewModel) clampScroll() AgentViewModel {
 	viewHeight := m.viewHeight()
@@ -144,6 +153,18 @@ func (m AgentViewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.conversationView.SetData(agent.AgentID, entries, info)
 				m.conversationView.SetSize(m.width, m.height)
 				m.mode = AgentViewModeConversation
+			}
+		case "pgdown":
+			if len(m.agents) > 0 {
+				m.agentSelected += m.listPageSize()
+				if m.agentSelected >= len(m.agents) {
+					m.agentSelected = len(m.agents) - 1
+				}
+			}
+		case "pgup":
+			m.agentSelected -= m.listPageSize()
+			if m.agentSelected < 0 {
+				m.agentSelected = 0
 			}
 		}
 		m = m.clampScroll()

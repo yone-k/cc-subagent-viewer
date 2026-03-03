@@ -32,12 +32,14 @@ func testEntries() []claude.ConversationEntry {
 }
 
 var (
-	escKey   = tea.KeyMsg{Type: tea.KeyEsc}
-	jKey     = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
-	kKey     = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
+	escKey        = tea.KeyMsg{Type: tea.KeyEsc}
+	jKey          = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	kKey          = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
 	enterKey      = tea.KeyMsg{Type: tea.KeyEnter}
 	shiftLeftKey  = tea.KeyMsg{Type: tea.KeyShiftLeft}
 	shiftRightKey = tea.KeyMsg{Type: tea.KeyShiftRight}
+	pgUpKey       = tea.KeyMsg{Type: tea.KeyPgUp}
+	pgDownKey     = tea.KeyMsg{Type: tea.KeyPgDown}
 )
 
 func TestConversationView_EmptyState(t *testing.T) {
@@ -409,6 +411,127 @@ func TestConversationView_FilterCursorNavigation(t *testing.T) {
 	m, _ = m.Update(shiftLeftKey)
 	if m.filterCursor != 0 {
 		t.Errorf("filterCursor should stay at 0, got %d", m.filterCursor)
+	}
+}
+
+func TestConversationView_PageDown(t *testing.T) {
+	// Given: a conversation view with enough content to scroll
+	// viewHeight = height(30) - 3 = 27
+	longText := strings.Repeat("Line of text.\n", 100)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
+	m := newTestConversationView(entries)
+
+	// Scroll to top first (SetData scrolls to bottom)
+	m.scrollOffset = 0
+
+	// When: pgdown is pressed
+	m, handled := m.Update(pgDownKey)
+
+	// Then: scrollOffset increases by viewHeight (27)
+	if !handled {
+		t.Error("pgdown key should be handled")
+	}
+	if m.scrollOffset != 27 {
+		t.Errorf("after pgdown, scrollOffset = %d, want 27", m.scrollOffset)
+	}
+}
+
+func TestConversationView_PageUp(t *testing.T) {
+	// Given: a conversation view scrolled down
+	longText := strings.Repeat("Line of text.\n", 100)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
+	m := newTestConversationView(entries)
+
+	// Start at a known scroll position
+	m.scrollOffset = 50
+
+	// When: pgup is pressed
+	m, handled := m.Update(pgUpKey)
+
+	// Then: scrollOffset decreases by viewHeight (27)
+	if !handled {
+		t.Error("pgup key should be handled")
+	}
+	if m.scrollOffset != 23 {
+		t.Errorf("after pgup, scrollOffset = %d, want 23", m.scrollOffset)
+	}
+}
+
+func TestConversationView_PageDown_ClampsAtBottom(t *testing.T) {
+	// Given: a conversation view near the bottom
+	longText := strings.Repeat("Line of text.\n", 50)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
+	m := newTestConversationView(entries)
+
+	// Set scrollOffset near the end (will be clamped by clampScroll)
+	m.scrollOffset = 0
+
+	// Press pgdown multiple times to reach the end
+	for i := 0; i < 10; i++ {
+		m, _ = m.Update(pgDownKey)
+	}
+
+	// Then: scrollOffset should be clamped to maxScroll, not exceed it
+	maxScroll := m.maxScroll()
+	if m.scrollOffset > maxScroll {
+		t.Errorf("scrollOffset = %d exceeds maxScroll = %d", m.scrollOffset, maxScroll)
+	}
+	if m.scrollOffset != maxScroll {
+		t.Errorf("scrollOffset = %d, want maxScroll = %d", m.scrollOffset, maxScroll)
+	}
+}
+
+func TestConversationView_PageUp_ClampsAtTop(t *testing.T) {
+	// Given: a conversation view near the top
+	longText := strings.Repeat("Line of text.\n", 50)
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: longText}}},
+	}
+	m := newTestConversationView(entries)
+	m.scrollOffset = 5
+
+	// When: pgup is pressed (viewHeight=27, offset=5 → would go to -22)
+	m, _ = m.Update(pgUpKey)
+
+	// Then: scrollOffset is clamped at 0
+	if m.scrollOffset != 0 {
+		t.Errorf("after pgup from offset 5, scrollOffset = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestConversationView_PageScroll_FewerLinesThanPageSize(t *testing.T) {
+	// Given: a conversation view with fewer lines than viewHeight
+	entries := []claude.ConversationEntry{
+		{Type: claude.EntryTypeAssistant, Content: []claude.ContentBlock{{Type: "text", Text: "Short text"}}},
+	}
+	m := newTestConversationView(entries)
+
+	// When: pgdown is pressed
+	m, handled := m.Update(pgDownKey)
+
+	// Then: scrollOffset stays at 0 (maxScroll is 0)
+	if !handled {
+		t.Error("pgdown key should be handled")
+	}
+	if m.scrollOffset != 0 {
+		t.Errorf("pgdown with few items, scrollOffset = %d, want 0", m.scrollOffset)
+	}
+
+	// When: pgup is pressed
+	m, handled = m.Update(pgUpKey)
+
+	// Then: scrollOffset stays at 0
+	if !handled {
+		t.Error("pgup key should be handled")
+	}
+	if m.scrollOffset != 0 {
+		t.Errorf("pgup with few items, scrollOffset = %d, want 0", m.scrollOffset)
 	}
 }
 

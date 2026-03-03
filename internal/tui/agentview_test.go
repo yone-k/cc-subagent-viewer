@@ -219,3 +219,194 @@ func TestAgentView_ScrollFollowsSelection(t *testing.T) {
 		t.Errorf("scrollOffset = %d, want 0", m.scrollOffset)
 	}
 }
+
+// pgUpKey, pgDownKey are declared in conversationview_test.go (same package)
+
+func TestAgentView_PageDown(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 11) // viewHeight = 11-2 = 9, pageSize = 9/3 = 3
+
+	// Given: 10 agents, agentSelected at 0
+	agents := make([]claude.SubagentInfo, 10)
+	for i := range agents {
+		agents[i] = claude.SubagentInfo{
+			AgentID: fmt.Sprintf("agent-%d", i+1),
+			Slug:    fmt.Sprintf("agent-%d", i+1),
+			Prompt:  fmt.Sprintf("Prompt for agent %d", i+1),
+		}
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// When: pgdown is pressed
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected moves by pageSize (3)
+	if m.agentSelected != 3 {
+		t.Errorf("after pgdown, agentSelected = %d, want 3", m.agentSelected)
+	}
+}
+
+func TestAgentView_PageUp(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 11) // viewHeight = 11-2 = 9, pageSize = 9/3 = 3
+
+	// Given: 10 agents, agentSelected at index 6
+	agents := make([]claude.SubagentInfo, 10)
+	for i := range agents {
+		agents[i] = claude.SubagentInfo{
+			AgentID: fmt.Sprintf("agent-%d", i+1),
+			Slug:    fmt.Sprintf("agent-%d", i+1),
+			Prompt:  fmt.Sprintf("Prompt for agent %d", i+1),
+		}
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// Move to index 6
+	for i := 0; i < 6; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(AgentViewModel)
+	}
+	if m.agentSelected != 6 {
+		t.Fatalf("setup: agentSelected = %d, want 6", m.agentSelected)
+	}
+
+	// When: pgup is pressed
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected moves up by pageSize (3)
+	if m.agentSelected != 3 {
+		t.Errorf("after pgup, agentSelected = %d, want 3", m.agentSelected)
+	}
+}
+
+func TestAgentView_PageDown_ClampsAtEnd(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 11) // viewHeight = 11-2 = 9, pageSize = 9/3 = 3
+
+	// Given: 5 agents, agentSelected at index 3
+	agents := make([]claude.SubagentInfo, 5)
+	for i := range agents {
+		agents[i] = claude.SubagentInfo{
+			AgentID: fmt.Sprintf("agent-%d", i+1),
+			Slug:    fmt.Sprintf("agent-%d", i+1),
+			Prompt:  fmt.Sprintf("Prompt for agent %d", i+1),
+		}
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// Move to index 3
+	for i := 0; i < 3; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(AgentViewModel)
+	}
+
+	// When: pgdown is pressed (3 + 3 = 6, but max is 4)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected clamped to last item (index 4)
+	if m.agentSelected != 4 {
+		t.Errorf("after pgdown near end, agentSelected = %d, want 4", m.agentSelected)
+	}
+}
+
+func TestAgentView_PageUp_ClampsAtStart(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 11) // viewHeight = 11-2 = 9, pageSize = 9/3 = 3
+
+	// Given: 10 agents, agentSelected at index 2
+	agents := make([]claude.SubagentInfo, 10)
+	for i := range agents {
+		agents[i] = claude.SubagentInfo{
+			AgentID: fmt.Sprintf("agent-%d", i+1),
+			Slug:    fmt.Sprintf("agent-%d", i+1),
+			Prompt:  fmt.Sprintf("Prompt for agent %d", i+1),
+		}
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// Move to index 2
+	for i := 0; i < 2; i++ {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m = updated.(AgentViewModel)
+	}
+
+	// When: pgup is pressed (2 - 3 = -1, should clamp to 0)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected clamped to 0
+	if m.agentSelected != 0 {
+		t.Errorf("after pgup near start, agentSelected = %d, want 0", m.agentSelected)
+	}
+}
+
+func TestAgentView_PageScroll_FewerAgentsThanPageSize(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 20) // viewHeight = 20-2 = 18, pageSize = 18/3 = 6
+
+	// Given: only 2 agents (fewer than pageSize of 6)
+	agents := make([]claude.SubagentInfo, 2)
+	for i := range agents {
+		agents[i] = claude.SubagentInfo{
+			AgentID: fmt.Sprintf("agent-%d", i+1),
+			Slug:    fmt.Sprintf("agent-%d", i+1),
+			Prompt:  fmt.Sprintf("Prompt for agent %d", i+1),
+		}
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// When: pgdown is pressed
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected moves to last item (index 1)
+	if m.agentSelected != 1 {
+		t.Errorf("pgdown with few agents, agentSelected = %d, want 1", m.agentSelected)
+	}
+
+	// When: pgup is pressed
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(AgentViewModel)
+
+	// Then: agentSelected moves back to 0
+	if m.agentSelected != 0 {
+		t.Errorf("pgup with few agents, agentSelected = %d, want 0", m.agentSelected)
+	}
+}
+
+func TestAgentView_PageScroll_OnlyInListMode(t *testing.T) {
+	m := NewAgentViewModel()
+	m.SetSize(80, 11)
+
+	// Given: agents and in conversation mode
+	agents := []claude.SubagentInfo{
+		{AgentID: "a1", Slug: "test-agent", Prompt: "test prompt", EntryCount: 3},
+	}
+	updated, _ := m.Update(watcher.SubagentsDiscoveredMsg{Agents: agents})
+	m = updated.(AgentViewModel)
+
+	// Enter conversation mode
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(AgentViewModel)
+	if m.Mode() != AgentViewModeConversation {
+		t.Fatalf("expected AgentViewModeConversation, got %d", m.Mode())
+	}
+
+	// When: pgdown is pressed in conversation mode
+	// Then: it should not affect agentSelected (it's delegated to conversation view)
+	prevSelected := m.agentSelected
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(AgentViewModel)
+
+	if m.agentSelected != prevSelected {
+		t.Errorf("pgdown in conversation mode should not change agentSelected, was %d, got %d", prevSelected, m.agentSelected)
+	}
+}

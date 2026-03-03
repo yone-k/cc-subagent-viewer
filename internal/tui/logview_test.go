@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -309,6 +310,136 @@ func TestLogView_FilterCursorNavigation(t *testing.T) {
 	m = newModel.(LogViewModel)
 	if m.filterCursor != 0 {
 		t.Errorf("filterCursor should stay at 0, got %d", m.filterCursor)
+	}
+}
+
+// pgUpKey, pgDownKey are declared in conversationview_test.go (same package)
+
+func TestLogView_PageDown(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24) // pageSize = height(24) - 4 = 20
+
+	// Given: 50 ERROR entries, scrolled to top
+	entries := make([]claude.LogEntry, 50)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, fmt.Sprintf("error line %d", i))
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
+	m = newModel.(LogViewModel)
+	m.scrollOffset = 0
+
+	// When: pgdown is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset increases by pageSize (20)
+	if m.scrollOffset != 20 {
+		t.Errorf("after pgdown, scrollOffset = %d, want 20", m.scrollOffset)
+	}
+}
+
+func TestLogView_PageUp(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24) // pageSize = height(24) - 4 = 20
+
+	// Given: 50 ERROR entries, scrollOffset at 30
+	entries := make([]claude.LogEntry, 50)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, fmt.Sprintf("error line %d", i))
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
+	m = newModel.(LogViewModel)
+	m.scrollOffset = 30
+
+	// When: pgup is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset decreases by pageSize (20)
+	if m.scrollOffset != 10 {
+		t.Errorf("after pgup, scrollOffset = %d, want 10", m.scrollOffset)
+	}
+}
+
+func TestLogView_PageDown_ClampsAtBottom(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24) // pageSize = 20
+
+	// Given: 50 ERROR entries, scrollOffset near the end
+	entries := make([]claude.LogEntry, 50)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, fmt.Sprintf("error line %d", i))
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
+	m = newModel.(LogViewModel)
+	maxScroll := m.maxScroll()
+	if maxScroll == 0 {
+		t.Fatal("expected maxScroll > 0 with 50 entries")
+	}
+	m.scrollOffset = maxScroll - 1
+
+	// When: pgdown is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset is clamped to maxScroll
+	if m.scrollOffset != maxScroll {
+		t.Errorf("scrollOffset = %d, want maxScroll = %d", m.scrollOffset, maxScroll)
+	}
+}
+
+func TestLogView_PageUp_ClampsAtTop(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24) // pageSize = 20
+
+	// Given: 50 ERROR entries, scrollOffset at 5
+	entries := make([]claude.LogEntry, 50)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, fmt.Sprintf("error line %d", i))
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
+	m = newModel.(LogViewModel)
+	m.scrollOffset = 5
+
+	// When: pgup is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset clamped to 0
+	if m.scrollOffset != 0 {
+		t.Errorf("after pgup near top, scrollOffset = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestLogView_PageScroll_FewerEntriesThanPageSize(t *testing.T) {
+	m := NewLogViewModel()
+	m.SetSize(80, 24) // pageSize = 20
+
+	// Given: only 5 ERROR entries (fewer than pageSize of 20)
+	entries := make([]claude.LogEntry, 5)
+	for i := range entries {
+		entries[i] = makeLogEntry(claude.LevelERROR, fmt.Sprintf("error line %d", i))
+	}
+	newModel, _ := m.Update(watcher.LogEntriesMsg{Entries: entries, Initial: true})
+	m = newModel.(LogViewModel)
+	m.scrollOffset = 0
+
+	// When: pgdown is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset remains 0 because all lines fit
+	if m.scrollOffset != 0 {
+		t.Errorf("pgdown with few entries, scrollOffset = %d, want 0", m.scrollOffset)
+	}
+
+	// When: pgup is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(LogViewModel)
+
+	// Then: scrollOffset remains 0
+	if m.scrollOffset != 0 {
+		t.Errorf("pgup with few entries, scrollOffset = %d, want 0", m.scrollOffset)
 	}
 }
 

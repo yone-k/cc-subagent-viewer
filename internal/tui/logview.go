@@ -76,6 +76,15 @@ func (m *LogViewModel) SetSize(width, height int) {
 	m.clampScroll()
 }
 
+// pageSize returns the number of lines per page scroll.
+func (m LogViewModel) pageSize() int {
+	ps := m.height - 4
+	if ps < 1 {
+		ps = 1
+	}
+	return ps
+}
+
 // EntryCount returns the number of stored entries.
 func (m LogViewModel) EntryCount() int {
 	return len(m.entries)
@@ -147,18 +156,26 @@ func (m LogViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searching = true
 			m.searchInput.Focus()
 			return m, m.searchInput.Cursor.BlinkCmd()
-		default:
-			switch msg.String() {
-			case "up", "k":
-				if m.scrollOffset > 0 {
-					m.scrollOffset--
+			default:
+				switch msg.String() {
+				case "up", "k":
+					if m.scrollOffset > 0 {
+						m.scrollOffset--
+					}
+				case "down", "j":
+					m.scrollOffset++
+					m.clampScroll()
+				case "pgdown":
+					m.scrollOffset += m.pageSize()
+					m.clampScroll()
+				case "pgup":
+					m.scrollOffset -= m.pageSize()
+					if m.scrollOffset < 0 {
+						m.scrollOffset = 0
+					}
 				}
-			case "down", "j":
-				m.scrollOffset++
-				m.clampScroll()
 			}
 		}
-	}
 	return m, nil
 }
 
