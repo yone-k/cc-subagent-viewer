@@ -307,6 +307,76 @@ func TestAppModel_ShiftArrowDelegatedToLogView(t *testing.T) {
 	}
 }
 
+func TestAppModel_FooterHelp(t *testing.T) {
+	tests := []struct {
+		name         string
+		tab          int
+		agentMode    AgentViewMode
+		wantContains []string
+	}{
+		{
+			name: "Tab0_Task",
+			tab:  0,
+			wantContains: []string{
+				"pgup/pgdn",
+				"j/k: スクロール",
+				"1-4: タブ切替",
+				"q: 終了",
+			},
+		},
+		{
+			name:      "Tab1_AgentList",
+			tab:       1,
+			agentMode: AgentViewModeList,
+			wantContains: []string{
+				"pgup/pgdn",
+				"j/k: スクロール",
+				"enter: 会話表示",
+			},
+		},
+		{
+			name:      "Tab1_AgentConversation",
+			tab:       1,
+			agentMode: AgentViewModeConversation,
+			wantContains: []string{
+				"pgup/pgdn",
+				"j/k: スクロール",
+				"esc: 戻る",
+			},
+		},
+		{
+			name: "Tab2_Log",
+			tab:  2,
+			wantContains: []string{
+				"pgup/pgdn",
+				"j/k: スクロール",
+				"/: 検索",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewAppModel(nil, "")
+			m.state = StateViewer
+			m.session = claude.SessionInfo{SessionID: "test", Project: "/test"}
+			m.width = 120
+			m.height = 40
+			m.tabs.SetActive(tt.tab)
+			if tt.tab == 1 {
+				m.agentView.mode = tt.agentMode
+			}
+
+			help := m.footerHelp()
+			for _, want := range tt.wantContains {
+				if !strings.Contains(help, want) {
+					t.Errorf("footerHelp() = %q, want to contain %q", help, want)
+				}
+			}
+		})
+	}
+}
+
 func TestAppModel_ShiftArrowDelegatedToConversationView(t *testing.T) {
 	m := NewAppModel(nil, "")
 	m.state = StateViewer

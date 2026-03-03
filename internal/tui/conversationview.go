@@ -115,6 +115,14 @@ func (m ConversationViewModel) Update(msg tea.KeyMsg) (ConversationViewModel, bo
 	case "down", "j":
 		m.scrollOffset++
 		m.clampScroll()
+	case "pgdown":
+		m.scrollOffset += m.viewHeight()
+		m.clampScroll()
+	case "pgup":
+		m.scrollOffset -= m.viewHeight()
+		if m.scrollOffset < 0 {
+			m.scrollOffset = 0
+		}
 	}
 
 	return m, true

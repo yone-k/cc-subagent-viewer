@@ -87,6 +87,18 @@ func (m TaskViewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		m.showDetail = !m.showDetail
+	case "pgdown":
+		if len(m.tasks) > 0 {
+			m.selected += m.viewHeight()
+			if m.selected >= len(m.tasks) {
+				m.selected = len(m.tasks) - 1
+			}
+		}
+	case "pgup":
+		m.selected -= m.viewHeight()
+		if m.selected < 0 {
+			m.selected = 0
+		}
 	}
 	m = m.clampScroll()
 	return m, nil

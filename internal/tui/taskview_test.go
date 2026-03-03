@@ -339,3 +339,165 @@ func TestTaskView_ScrollFollowsSelection(t *testing.T) {
 		t.Errorf("scrollOffset = %d, want 0", m.scrollOffset)
 	}
 }
+
+// pgUpKey, pgDownKey are declared in conversationview_test.go (same package)
+
+func TestTaskView_PageDown(t *testing.T) {
+	m := NewTaskViewModel()
+	m.SetSize(80, 7) // viewHeight = 7-2 = 5
+
+	// Given: 20 tasks, selected at 0
+	tasks := make([]claude.Task, 20)
+	for i := range tasks {
+		tasks[i] = claude.Task{
+			ID:      fmt.Sprintf("%d", i+1),
+			Subject: fmt.Sprintf("Task %d", i+1),
+			Status:  "pending",
+		}
+	}
+	newModel, _ := m.Update(watcher.TasksUpdatedMsg{Tasks: tasks})
+	m = newModel.(TaskViewModel)
+
+	// When: pgdown is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected moves by viewHeight (5)
+	if m.selected != 5 {
+		t.Errorf("after pgdown, selected = %d, want 5", m.selected)
+	}
+}
+
+func TestTaskView_PageUp(t *testing.T) {
+	m := NewTaskViewModel()
+	m.SetSize(80, 7) // viewHeight = 7-2 = 5
+
+	// Given: 20 tasks, selected at index 10
+	tasks := make([]claude.Task, 20)
+	for i := range tasks {
+		tasks[i] = claude.Task{
+			ID:      fmt.Sprintf("%d", i+1),
+			Subject: fmt.Sprintf("Task %d", i+1),
+			Status:  "pending",
+		}
+	}
+	newModel, _ := m.Update(watcher.TasksUpdatedMsg{Tasks: tasks})
+	m = newModel.(TaskViewModel)
+
+	// Move to index 10
+	for i := 0; i < 10; i++ {
+		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = newModel.(TaskViewModel)
+	}
+	if m.selected != 10 {
+		t.Fatalf("setup: selected = %d, want 10", m.selected)
+	}
+
+	// When: pgup is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected moves up by viewHeight (5)
+	if m.selected != 5 {
+		t.Errorf("after pgup, selected = %d, want 5", m.selected)
+	}
+}
+
+func TestTaskView_PageDown_ClampsAtEnd(t *testing.T) {
+	m := NewTaskViewModel()
+	m.SetSize(80, 7) // viewHeight = 7-2 = 5
+
+	// Given: 8 tasks, selected at index 5
+	tasks := make([]claude.Task, 8)
+	for i := range tasks {
+		tasks[i] = claude.Task{
+			ID:      fmt.Sprintf("%d", i+1),
+			Subject: fmt.Sprintf("Task %d", i+1),
+			Status:  "pending",
+		}
+	}
+	newModel, _ := m.Update(watcher.TasksUpdatedMsg{Tasks: tasks})
+	m = newModel.(TaskViewModel)
+
+	// Move to index 5
+	for i := 0; i < 5; i++ {
+		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = newModel.(TaskViewModel)
+	}
+
+	// When: pgdown is pressed (5 + 5 = 10, but max is 7)
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected is clamped to last item (index 7)
+	if m.selected != 7 {
+		t.Errorf("after pgdown at near-end, selected = %d, want 7", m.selected)
+	}
+}
+
+func TestTaskView_PageUp_ClampsAtStart(t *testing.T) {
+	m := NewTaskViewModel()
+	m.SetSize(80, 7) // viewHeight = 7-2 = 5
+
+	// Given: 20 tasks, selected at index 3
+	tasks := make([]claude.Task, 20)
+	for i := range tasks {
+		tasks[i] = claude.Task{
+			ID:      fmt.Sprintf("%d", i+1),
+			Subject: fmt.Sprintf("Task %d", i+1),
+			Status:  "pending",
+		}
+	}
+	newModel, _ := m.Update(watcher.TasksUpdatedMsg{Tasks: tasks})
+	m = newModel.(TaskViewModel)
+
+	// Move to index 3
+	for i := 0; i < 3; i++ {
+		newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = newModel.(TaskViewModel)
+	}
+
+	// When: pgup is pressed (3 - 5 = -2, should clamp to 0)
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected is clamped to 0
+	if m.selected != 0 {
+		t.Errorf("after pgup near start, selected = %d, want 0", m.selected)
+	}
+}
+
+func TestTaskView_PageScroll_FewerTasksThanPageSize(t *testing.T) {
+	m := NewTaskViewModel()
+	m.SetSize(80, 12) // viewHeight = 12-2 = 10
+
+	// Given: only 3 tasks (fewer than page size of 10)
+	tasks := make([]claude.Task, 3)
+	for i := range tasks {
+		tasks[i] = claude.Task{
+			ID:      fmt.Sprintf("%d", i+1),
+			Subject: fmt.Sprintf("Task %d", i+1),
+			Status:  "pending",
+		}
+	}
+	newModel, _ := m.Update(watcher.TasksUpdatedMsg{Tasks: tasks})
+	m = newModel.(TaskViewModel)
+
+	// When: pgdown is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected moves to last task (index 2)
+	if m.selected != 2 {
+		t.Errorf("pgdown with few tasks, selected = %d, want 2", m.selected)
+	}
+
+	// When: pgup is pressed
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = newModel.(TaskViewModel)
+
+	// Then: selected moves back to 0
+	if m.selected != 0 {
+		t.Errorf("pgup with few tasks, selected = %d, want 0", m.selected)
+	}
+}

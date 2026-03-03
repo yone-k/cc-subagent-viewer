@@ -304,17 +304,19 @@ func (m *AppModel) footerHelp() string {
 	var keys string
 
 	switch m.tabs.Active {
+	case 0:
+		keys = "j/k: スクロール  pgup/pgdn: ページ送り  1-4: タブ切替  q: 終了"
 	case 1:
 		switch m.agentView.Mode() {
 		case AgentViewModeList:
-			keys = "enter: 会話表示  1-4: タブ切替  q: 終了"
+			keys = "j/k: スクロール  pgup/pgdn: ページ送り  enter: 会話表示  1-4: タブ切替  q: 終了"
 		case AgentViewModeConversation:
-			keys = "j/k: スクロール  shift+←→: フィルタ選択  enter: フィルタ切替  esc: 戻る  q: 終了"
+			keys = "j/k: スクロール  pgup/pgdn: ページ送り  shift+←→: フィルタ選択  enter: フィルタ切替  esc: 戻る  q: 終了"
 		default:
 			keys = "1-4/←→: タブ切替  q: 終了"
 		}
 	case 2:
-		keys = "j/k: スクロール  shift+←→: フィルタ選択  enter: フィルタ切替  /: 検索  q: 終了"
+		keys = "j/k: スクロール  pgup/pgdn: ページ送り  shift+←→: フィルタ選択  enter: フィルタ切替  /: 検索  q: 終了"
 	default:
 		keys = "1-4/←→: タブ切替  q: 終了"
 	}
