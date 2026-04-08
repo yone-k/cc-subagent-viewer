@@ -16,7 +16,7 @@ type TabsModel struct {
 func NewTabsModel() TabsModel {
 	return TabsModel{
 		Active: 0,
-		tabs:   []string{"Tasks", "Agents", "Logs", "Stats"},
+		tabs:   []string{"Tasks", "Agents", "Logs", "Cmds", "Stats"},
 		badges: make(map[int]int),
 	}
 }

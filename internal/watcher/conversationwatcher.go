@@ -27,6 +27,9 @@ type ConversationWatcher struct {
 	parentOffset int64
 	parentCache  *claude.AgentDescriptionCache
 	parentMtime  time.Time
+	bashOffset   int64
+	bashCache    *claude.BashCommandCache
+	bashMtime    time.Time
 }
 
 // NewConversationWatcher creates a new ConversationWatcher.
@@ -142,8 +145,9 @@ func (cw *ConversationWatcher) buildAgentsList() []claude.SubagentInfo {
 
 // scan does the initial full scan of all agent files.
 func (cw *ConversationWatcher) scan() {
+	cw.publishBashCommands()
+
 	if cw.dir == "" {
-		// Send empty discovery message
 		cw.program.Send(SubagentsDiscoveredMsg{})
 		return
 	}
@@ -184,24 +188,23 @@ func (cw *ConversationWatcher) scan() {
 
 // poll checks for new files and new entries in existing files.
 func (cw *ConversationWatcher) poll() {
+	if parentPath := cw.resolveParentPath(); parentPath != "" {
+		if info, err := os.Stat(parentPath); err == nil {
+			cw.resetParentCachesIfReplaced(info)
+			if cw.bashNeedsReload(info) {
+				cw.publishBashCommands()
+			}
+		}
+	}
+
 	if cw.dir == "" {
 		return
 	}
 
-	// Check if parent conversation file has changed
 	parentChanged := false
 	if parentPath := cw.resolveParentPath(); parentPath != "" {
 		if info, err := os.Stat(parentPath); err == nil {
-			sizeChanged := info.Size() != cw.parentOffset
-			mtimeChanged := !info.ModTime().Equal(cw.parentMtime)
-			if sizeChanged || mtimeChanged {
-				parentChanged = true
-				// Same size but different mtime means file was replaced (e.g. /compact)
-				if !sizeChanged && mtimeChanged {
-					cw.parentOffset = 0
-					cw.parentCache = nil
-				}
-			}
+			parentChanged = cw.parentNeedsReload(info)
 		}
 	}
 
@@ -296,6 +299,57 @@ func (cw *ConversationWatcher) poll() {
 	}
 }
 
+func (cw *ConversationWatcher) parentNeedsReload(info os.FileInfo) bool {
+	if info == nil {
+		return false
+	}
+	return info.Size() != cw.parentOffset || !info.ModTime().Equal(cw.parentMtime)
+}
+
+func (cw *ConversationWatcher) bashNeedsReload(info os.FileInfo) bool {
+	if info == nil {
+		return false
+	}
+	return info.Size() != cw.bashOffset || !info.ModTime().Equal(cw.bashMtime)
+}
+
+func (cw *ConversationWatcher) resetParentCachesIfReplaced(info os.FileInfo) {
+	if info == nil {
+		return
+	}
+	sizeChanged := info.Size() != cw.parentOffset
+	mtimeChanged := !info.ModTime().Equal(cw.parentMtime)
+	if !sizeChanged && mtimeChanged {
+		cw.parentOffset = 0
+		cw.parentCache = nil
+	}
+	sizeChanged = info.Size() != cw.bashOffset
+	mtimeChanged = !info.ModTime().Equal(cw.bashMtime)
+	if !sizeChanged && mtimeChanged {
+		cw.bashOffset = 0
+		cw.bashCache = nil
+	}
+}
+
+func (cw *ConversationWatcher) publishBashCommands() {
+	parentPath := cw.resolveParentPath()
+	if parentPath == "" {
+		return
+	}
+	result, err := claude.ExtractBashCommandsIncremental(parentPath, cw.bashOffset, cw.bashCache)
+	if err != nil {
+		return
+	}
+	cw.bashCache = result.Cache
+	cw.bashOffset = result.Offset
+	cw.bashMtime = result.ModTime
+	if result.Cache == nil {
+		cw.program.Send(BashCommandsUpdatedMsg{})
+		return
+	}
+	cw.program.Send(BashCommandsUpdatedMsg{Commands: append([]claude.BashCommand(nil), result.Cache.Commands...)})
+}
+
 // readNewEntries reads new JSONL lines from the given offset.
 // Returns an error if the scanner encountered a read error (e.g. token too long),
 // so the caller can avoid advancing the offset and losing unread data.
@@ -312,5 +366,3 @@ func (cw *ConversationWatcher) readNewEntries(path string, offset int64) ([]clau
 
 	return claude.ParseConversationEntries(f)
 }
-
-

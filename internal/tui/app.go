@@ -43,6 +43,7 @@ type AppModel struct {
 	taskView  TaskViewModel
 	agentView AgentViewModel
 	logView   LogViewModel
+	cmdsView  CommandsViewModel
 	statsView StatsViewModel
 
 	// Watcher lifecycle
@@ -60,6 +61,7 @@ func NewAppModel(sessions []claude.SessionInfo, currentProject string) AppModel 
 		taskView:  NewTaskViewModel(),
 		agentView: NewAgentViewModel(),
 		logView:   NewLogViewModel(),
+		cmdsView:  NewCommandsViewModel(),
 	}
 }
 
@@ -73,6 +75,7 @@ func NewAppModelWithSession(session claude.SessionInfo) AppModel {
 		taskView:  NewTaskViewModel(),
 		agentView: NewAgentViewModel(),
 		logView:   NewLogViewModel(),
+		cmdsView:  NewCommandsViewModel(),
 		statsView: NewStatsViewModel(),
 	}
 }
@@ -158,6 +161,12 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agentView = newModel.(AgentViewModel)
 		return m, cmd
 
+	case watcher.BashCommandsUpdatedMsg:
+		newModel, cmd := m.cmdsView.Update(msg)
+		m.cmdsView = newModel.(CommandsViewModel)
+		m.tabs.SetBadge(3, len(msg.Commands))
+		return m, cmd
+
 	case StatsUpdatedMsg:
 		newModel, cmd := m.statsView.Update(msg)
 		m.statsView = newModel.(StatsViewModel)
@@ -221,6 +230,10 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tabs.SetActive(3)
 		m.recomputeContentSize()
 		return m, nil
+	case key.Matches(msg, GlobalKeys.Tab5):
+		m.tabs.SetActive(4)
+		m.recomputeContentSize()
+		return m, nil
 	case key.Matches(msg, GlobalKeys.NextTab):
 		m.tabs.NextTab()
 		m.recomputeContentSize()
@@ -247,6 +260,10 @@ func (m *AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logView = newModel.(LogViewModel)
 		cmd = c
 	case 3:
+		newModel, c := m.cmdsView.Update(msg)
+		m.cmdsView = newModel.(CommandsViewModel)
+		cmd = c
+	case 4:
 		newModel, c := m.statsView.Update(msg)
 		m.statsView = newModel.(StatsViewModel)
 		cmd = c
@@ -286,6 +303,8 @@ func (m *AppModel) View() string {
 	case 2:
 		b.WriteString(m.logView.View())
 	case 3:
+		b.WriteString(m.cmdsView.View())
+	case 4:
 		b.WriteString(m.statsView.View())
 	}
 
@@ -305,20 +324,26 @@ func (m *AppModel) footerHelp() string {
 
 	switch m.tabs.Active {
 	case 0:
-		keys = "j/k: スクロール  pgup/pgdn: ページ送り  1-4: タブ切替  q: 終了"
+		keys = "j/k: スクロール  pgup/pgdn: ページ送り  1-5: タブ切替  q: 終了"
 	case 1:
 		switch m.agentView.Mode() {
 		case AgentViewModeList:
-			keys = "j/k: スクロール  pgup/pgdn: ページ送り  enter: 会話表示  1-4: タブ切替  q: 終了"
+			keys = "j/k: スクロール  pgup/pgdn: ページ送り  enter: 会話表示  1-5: タブ切替  q: 終了"
 		case AgentViewModeConversation:
 			keys = "j/k: スクロール  pgup/pgdn: ページ送り  shift+←→: フィルタ選択  enter: フィルタ切替  esc: 戻る  q: 終了"
 		default:
-			keys = "1-4/←→: タブ切替  q: 終了"
+			keys = "1-5/←→: タブ切替  q: 終了"
 		}
 	case 2:
 		keys = "j/k: スクロール  pgup/pgdn: ページ送り  shift+←→: フィルタ選択  enter: フィルタ切替  /: 検索  q: 終了"
+	case 3:
+		if m.cmdsView.Mode() == CmdsViewModeDetail {
+			keys = "j/k: スクロール  pgup/pgdn: ページ送り  esc: 戻る  1-5: タブ切替  q: 終了"
+		} else {
+			keys = "j/k: スクロール  pgup/pgdn: ページ送り  enter: 詳細表示  1-5: タブ切替  q: 終了"
+		}
 	default:
-		keys = "1-4/←→: タブ切替  q: 終了"
+		keys = "1-5/←→: タブ切替  q: 終了"
 	}
 
 	session := fmt.Sprintf("Session: %s", m.session.SessionID)
@@ -340,6 +365,7 @@ func (m *AppModel) recomputeContentSize() {
 	m.taskView.SetSize(m.width, contentHeight)
 	m.agentView.SetSize(m.width, contentHeight)
 	m.logView.SetSize(m.width, contentHeight)
+	m.cmdsView.SetSize(m.width, contentHeight)
 	m.statsView.SetSize(m.width, contentHeight)
 }
 
