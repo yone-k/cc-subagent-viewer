@@ -59,11 +59,13 @@ type SubagentInfo struct {
 // For queue-operation lines (e.g. background agent task-notifications),
 // Content holds the top-level "content" field instead of Message.
 type rawLine struct {
-	Type    string          `json:"type"`
-	Message json.RawMessage `json:"message"`
-	Content json.RawMessage `json:"content"`
-	AgentID string          `json:"agentId"`
-	Slug    string          `json:"slug"`
+	Type          string          `json:"type"`
+	Timestamp     string          `json:"timestamp"`
+	Message       json.RawMessage `json:"message"`
+	Content       json.RawMessage `json:"content"`
+	ToolUseResult json.RawMessage `json:"toolUseResult"`
+	AgentID       string          `json:"agentId"`
+	Slug          string          `json:"slug"`
 }
 
 // rawMessage represents the message field within a conversation line.

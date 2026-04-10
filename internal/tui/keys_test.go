@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestLogKeys_FilterToggle_BindsEnterAndShiftEnter(t *testing.T) {
@@ -80,5 +80,17 @@ func TestConversationKeys_FilterToggle_ExistingEnterBindingUnchanged(t *testing.
 	}
 	if keys[0] != "enter" {
 		t.Errorf("ConversationKeys.FilterToggle first key should be %q, got %q", "enter", keys[0])
+	}
+}
+
+func TestGlobalKeys_Tab5Binding(t *testing.T) {
+	keys := GlobalKeys.Tab5.Keys()
+	if len(keys) != 1 || keys[0] != "5" {
+		t.Fatalf("GlobalKeys.Tab5 should be bound to 5, got %v", keys)
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")}
+	if !key.Matches(msg, GlobalKeys.Tab5) {
+		t.Error("GlobalKeys.Tab5 should match key '5'")
 	}
 }

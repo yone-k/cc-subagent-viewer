@@ -415,6 +415,44 @@ func TestConversationWatcher_ParentSameSizeReplace(t *testing.T) {
 	}
 }
 
+func TestConversationWatcher_ParentOnlySessionPublishesBashCommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	parentPath := filepath.Join(tmpDir, "parent.jsonl")
+	parentContent := `{"type":"assistant","timestamp":"2026-04-08T13:29:37.069Z","message":{"content":[{"type":"tool_use","id":"bash_tool_1","name":"Bash","input":{"command":"go test ./...","description":"Run tests"}}]}}` + "\n"
+	if err := os.WriteFile(parentPath, []byte(parentContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	collector := newMsgCollector()
+	program := newTestProgram(collector)
+	defer program.Quit()
+
+	cw := NewConversationWatcher("", "session-without-subagents", program, "", nil)
+	cw.parentPath = parentPath
+
+	cw.scan()
+
+	var updated BashCommandsUpdatedMsg
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msg, ok := collector.waitForMsg(500 * time.Millisecond)
+		if !ok {
+			continue
+		}
+		if v, ok := msg.(BashCommandsUpdatedMsg); ok {
+			updated = v
+			break
+		}
+	}
+
+	if len(updated.Commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(updated.Commands))
+	}
+	if updated.Commands[0].Command != "go test ./..." {
+		t.Errorf("Command = %q, want %q", updated.Commands[0].Command, "go test ./...")
+	}
+}
+
 func TestConversationWatcher_CreatedAtPreserved(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "subagents")

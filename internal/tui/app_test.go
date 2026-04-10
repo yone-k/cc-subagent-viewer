@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yone-k/cc-subagent-viewer/internal/claude"
@@ -59,11 +60,18 @@ func TestAppModel_TabSwitch(t *testing.T) {
 		t.Errorf("Active tab = %d, want 2", mPtr.tabs.Active)
 	}
 
-	// Switch to tab 4 (Stats)
+	// Switch to tab 4 (Cmds)
 	newModel, _ = mPtr.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
 	mPtr = newModel.(*AppModel)
 	if mPtr.tabs.Active != 3 {
 		t.Errorf("Active tab = %d, want 3", mPtr.tabs.Active)
+	}
+
+	// Switch to tab 5 (Stats)
+	newModel, _ = mPtr.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	mPtr = newModel.(*AppModel)
+	if mPtr.tabs.Active != 4 {
+		t.Errorf("Active tab = %d, want 4", mPtr.tabs.Active)
 	}
 
 	// Switch to tab 1 (Tasks)
@@ -320,7 +328,7 @@ func TestAppModel_FooterHelp(t *testing.T) {
 			wantContains: []string{
 				"pgup/pgdn",
 				"j/k: スクロール",
-				"1-4: タブ切替",
+				"1-5: タブ切替",
 				"q: 終了",
 			},
 		},
@@ -353,6 +361,15 @@ func TestAppModel_FooterHelp(t *testing.T) {
 				"/: 検索",
 			},
 		},
+		{
+			name: "Tab3_Cmds",
+			tab:  3,
+			wantContains: []string{
+				"pgup/pgdn",
+				"j/k: スクロール",
+				"enter: 詳細表示",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,6 +391,31 @@ func TestAppModel_FooterHelp(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAppModel_BashCommandsUpdatedMsg(t *testing.T) {
+	m := NewAppModel(nil, "")
+	m.state = StateViewer
+	m.width = 80
+	m.height = 24
+
+	commands := []claude.BashCommand{
+		{
+			ToolUseID:   "bash-1",
+			Command:     "go test ./...",
+			Description: "Run tests",
+			Timestamp:   time.Date(2026, 4, 8, 13, 29, 37, 0, time.UTC),
+		},
+	}
+	newModel, _ := m.Update(watcher.BashCommandsUpdatedMsg{Commands: commands})
+	mPtr := newModel.(*AppModel)
+
+	if len(mPtr.cmdsView.commands) != 1 {
+		t.Fatalf("commands count = %d, want 1", len(mPtr.cmdsView.commands))
+	}
+	if mPtr.cmdsView.commands[0].Command != "go test ./..." {
+		t.Errorf("command = %q, want %q", mPtr.cmdsView.commands[0].Command, "go test ./...")
 	}
 }
 

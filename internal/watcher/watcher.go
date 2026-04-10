@@ -37,3 +37,8 @@ type ConversationUpdatedMsg struct {
 	Entries []claude.ConversationEntry
 	Info    *claude.SubagentInfo
 }
+
+// BashCommandsUpdatedMsg is sent when Bash commands are loaded or updated.
+type BashCommandsUpdatedMsg struct {
+	Commands []claude.BashCommand
+}
